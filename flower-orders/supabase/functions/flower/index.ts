@@ -1,14 +1,17 @@
 // 꽃 주문함 서버 (Supabase Edge Function)
 //
 //   POST /flower/ingest       휴대폰(MacroDroid)이 받은 카톡·문자를 보냄. key = 수집 키
-//   GET  /flower/messages     아직 주문으로 정리되지 않은 메시지 (최근 14일)
-//   POST /flower/messages/dismiss   { ids } 주문 아님 처리
+//   GET  /flower/messages     아직 주문으로 정리되지 않은 메시지
+//   POST /flower/messages/dismiss   { ids } 주문 아님 처리 (바로 삭제)
 //   GET  /flower/orders       주문 전체
 //   POST /flower/orders       { order, status, messageIds } 주문 등록
 //   PATCH /flower/orders/:id  { order, status } 주문 수정
 //   DELETE /flower/orders/:id
 //
 // ingest 외의 요청은 x-flower-key 헤더에 매장 비밀번호가 있어야 합니다.
+//
+// 개인정보 보호: 주문으로 확정되지 않은 메시지는 KEEP_DAYS가 지나면 자동으로 지웁니다.
+// 가족 대화·인증번호처럼 주문이 아닌 알림도 함께 들어오기 때문입니다.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -59,6 +62,17 @@ async function readParams(req: Request, url: URL) {
   return params;
 }
 
+const KEEP_DAYS = 3;
+const keepSince = () => new Date(Date.now() - KEEP_DAYS * 24 * 3600 * 1000).toISOString();
+
+// 요청이 올 때 10분에 한 번씩 오래된 메시지를 지웁니다 (별도 예약 작업 없이 동작).
+let lastCleanup = 0;
+async function cleanupOldMessages() {
+  if (Date.now() - lastCleanup < 10 * 60 * 1000) return;
+  lastCleanup = Date.now();
+  await db.from('flower_messages').delete().is('order_id', null).lt('received_at', keepSince());
+}
+
 const clean = (v: unknown, max: number) => String(v ?? '').replace(/\u0000/g, '').trim().slice(0, max);
 
 async function ingest(req: Request, url: URL) {
@@ -79,6 +93,7 @@ async function ingest(req: Request, url: URL) {
 
   const { error } = await db.from('flower_messages').insert({ source, sender, phone, body });
   if (error) return json({ error: error.message }, 500);
+  await cleanupOldMessages();
   return json({ ok: true });
 }
 
@@ -95,10 +110,10 @@ Deno.serve(async (req) => {
     if (path === '/ping') return json({ ok: true });
 
     if (path === '/messages' && req.method === 'GET') {
-      const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+      await cleanupOldMessages();
       const { data, error } = await db.from('flower_messages')
         .select('id, source, sender, phone, body, received_at')
-        .is('order_id', null).eq('dismissed', false).gte('received_at', since)
+        .is('order_id', null).eq('dismissed', false).gte('received_at', keepSince())
         .order('received_at', { ascending: true }).limit(500);
       if (error) throw error;
       return json({ messages: data });
@@ -106,7 +121,7 @@ Deno.serve(async (req) => {
 
     if (path === '/messages/dismiss' && req.method === 'POST') {
       const { ids } = await req.json();
-      const { error } = await db.from('flower_messages').update({ dismissed: true }).in('id', (ids || []).map(Number));
+      const { error } = await db.from('flower_messages').delete().is('order_id', null).in('id', (ids || []).map(Number));
       if (error) throw error;
       return json({ ok: true });
     }
@@ -139,7 +154,7 @@ Deno.serve(async (req) => {
       return json({ order: data });
     }
     if (m && req.method === 'DELETE') {
-      await db.from('flower_messages').update({ order_id: null, dismissed: true }).eq('order_id', m[1]);
+      await db.from('flower_messages').delete().eq('order_id', m[1]);
       const { error } = await db.from('flower_orders').delete().eq('id', m[1]);
       if (error) throw error;
       return json({ ok: true });

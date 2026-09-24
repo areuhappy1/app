@@ -472,7 +472,11 @@
     for (const msg of [...messages].sort((a, b) => a.at - b.at)) {
       const who = (msg.sender || '').trim() || normalizePhone(msg.phone) || '알 수 없음';
       if (!bySender.has(who)) bySender.set(who, []);
-      bySender.get(who).push(msg);
+      const list = bySender.get(who);
+      // 같은 알림이 거의 동시에 두 번 오는 경우(3분 안의 같은 내용)는 한 번만 셉니다.
+      const dup = list.find((m) => m.text === msg.text && msg.at - m.at < 3 * 60 * 1000);
+      if (dup) { (dup.dupIds = dup.dupIds || []).push(msg.id); continue; }
+      list.push(msg);
     }
     const out = [];
     for (const [who, msgs] of bySender) {
@@ -489,7 +493,7 @@
         order.isOrder = orderSignal(text) >= 3;
         order.channel = session.messages.some((m) => m.source === 'sms') ? 'sms' : 'kakao';
         order.sender = who;
-        order.messageIds = session.messages.map((m) => m.id);
+        order.messageIds = session.messages.flatMap((m) => [m.id, ...(m.dupIds || [])]);
         order.receivedAt = first.at.toISOString();
         order.source = session.messages
           .map((m) => `${ymd(m.at).slice(5).replace('-', '/')} ${fmtTime(m.at)}  ${m.text}`)

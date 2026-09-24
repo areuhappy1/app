@@ -128,3 +128,13 @@ test('서버 메시지 묶기: 보낸 사람별·4시간 간격으로 나누고 
   assert.deepEqual(c.messageIds, [4]);
   assert.equal(c.isOrder, false);
 });
+
+test('서버 메시지 묶기: 거의 동시에 두 번 온 같은 알림은 한 번만', () => {
+  const at = (s) => new Date(2026, 8, 24, 10, 0, s);
+  const [g] = parseMessages([
+    { id: 5, sender: '손님', text: '내일 꽃다발 픽업이요', at: at(0) },
+    { id: 6, sender: '손님', text: '내일 꽃다발 픽업이요', at: at(0) },
+  ]);
+  assert.deepEqual(g.messageIds, [5, 6]);
+  assert.equal(g.source.split('\n').length, 1);
+});
