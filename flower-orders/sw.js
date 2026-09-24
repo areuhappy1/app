@@ -1,5 +1,5 @@
 // 오프라인에서도 열리도록 앱 파일을 캐시합니다. 파일을 바꾸면 CACHE 버전을 올려 주세요.
-const CACHE = 'flower-orders-v2';
+const CACHE = 'flower-orders-v3';
 const FILES = ['./', './index.html', './styles.css', './parser.js', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -16,7 +16,8 @@ self.addEventListener('activate', (e) => {
 
 // 네트워크 우선, 실패하면 캐시 (공유하기로 들어온 ?text= 주소도 index.html로 응답)
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+  // 앱 파일만 캐시합니다. 서버(주문·메시지) 요청은 건드리지 않습니다.
+  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

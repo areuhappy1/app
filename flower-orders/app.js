@@ -24,6 +24,85 @@
     if (!store(ORDERS_KEY, orders)) toast('⚠️ 저장하지 못했어요. 백업 파일을 저장해 두세요.');
   };
 
+  // ---------- 서버 연결 (카톡·문자 자동 수집) ----------
+  const API_BASE = 'https://aqknqsweeasqlqreqvxk.supabase.co/functions/v1/flower';
+  const SERVER_KEY = 'flower-orders.server-key';
+  let serverKey = load(SERVER_KEY, '');
+  let inboxMessages = [];
+  const remote = () => Boolean(serverKey);
+  if (remote()) orders = [];
+
+  async function api(path, { method = 'GET', body, key = serverKey } = {}) {
+    const res = await fetch(API_BASE + path, {
+      method,
+      headers: { 'content-type': 'application/json', 'x-flower-key': key },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) throw new Error('매장 비밀번호가 맞지 않아요.');
+    if (!res.ok) throw new Error(data.error || `서버 오류 (${res.status})`);
+    return data;
+  }
+
+  const META = ['id', 'status', 'createdAt', 'updatedAt'];
+  const orderData = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !META.includes(k)));
+  const fromRow = (r) => ({ ...r.data, id: r.id, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at });
+
+  async function createOrder(data, messageIds = [], status = 'new') {
+    if (remote()) {
+      const { order } = await api('/orders', { method: 'POST', body: { order: data, status, messageIds } });
+      orders.push(fromRow(order));
+    } else {
+      const now = new Date().toISOString();
+      orders.push({ ...data, id: uid(), status, createdAt: now, updatedAt: now });
+      saveOrders();
+    }
+  }
+
+  async function updateOrder(o) {
+    o.updatedAt = new Date().toISOString();
+    if (remote()) await api(`/orders/${o.id}`, { method: 'PATCH', body: { order: orderData(o), status: o.status } });
+    else saveOrders();
+  }
+
+  async function deleteOrder(o) {
+    if (remote()) await api(`/orders/${o.id}`, { method: 'DELETE' });
+    orders = orders.filter((x) => x !== o);
+    if (!remote()) saveOrders();
+  }
+
+  let syncing = false;
+  let lastSync = null;
+  async function sync({ quiet = true } = {}) {
+    if (!remote() || syncing) return;
+    syncing = true;
+    try {
+      const [o, m] = await Promise.all([api('/orders'), api('/messages')]);
+      orders = o.orders.map(fromRow);
+      inboxMessages = m.messages;
+      lastSync = new Date();
+      setConn('ok');
+      render();
+      renderInbox();
+    } catch (e) {
+      setConn('error');
+      if (!quiet) toast(`⚠️ ${e.message}`);
+    } finally {
+      syncing = false;
+    }
+  }
+
+  function fail(e) {
+    toast(`⚠️ 저장하지 못했어요. ${e.message || ''}`);
+    sync();
+  }
+
+  function setConn(state) {
+    const el = $('#conn');
+    el.dataset.state = state;
+    el.textContent = state === 'ok' ? '● 자동 수집 중' : state === 'error' ? '⚠︎ 연결 끊김' : '이 기기에만 저장';
+  }
+
   const STATUSES = [
     ['new', '접수'],
     ['making', '제작중'],
@@ -76,15 +155,15 @@
       <input name="${name}" type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}"${inputmode ? ` inputmode="${inputmode}"` : ''} autocomplete="off"></label>`;
   }
 
-  function formHTML(o) {
+  function formHTML(o, openSource = false) {
     const missing = (v) => (v ? '' : ' missing');
     return `
       <div class="form-grid">
         ${field('customer', '고객명', o.customer)}
-        ${field('phone', '연락처', o.phone, { type: 'tel', placeholder: '010-0000-0000' })}
+        ${field('phone', '연락처', o.phone, { type: 'tel', placeholder: '예: 010-1234-5678' })}
         <label class="field wide${missing(o.product)}"><span class="label">상품</span>
           <input name="product" value="${esc(o.product)}" placeholder="예: 꽃다발 ×1, 동양란 ×1" autocomplete="off"></label>
-        ${field('price', '금액(원)', o.price ?? '', { inputmode: 'numeric', placeholder: '50000' })}
+        ${field('price', '금액(원)', o.price ?? '', { inputmode: 'numeric', placeholder: '예: 50000' })}
         ${field('style', '꽃·색감', o.style, { placeholder: '예: 장미, 핑크톤' })}
         <label class="field${missing(o.date)}"><span class="label">날짜</span>
           <input name="date" type="date" value="${esc(o.date)}"></label>
@@ -100,13 +179,13 @@
           ${field('recipient', '받는 분', o.recipient)}
           ${field('recipientPhone', '받는 분 연락처', o.recipientPhone, { type: 'tel' })}
         </div>
-        ${field('ribbon', '리본 문구', o.ribbon, { wide: true, placeholder: '축 개업 / 보내는 분: OOO' })}
+        ${field('ribbon', '리본 문구', o.ribbon, { wide: true, placeholder: '예: 축 개업 / 보내는 분: OOO' })}
         ${field('card', '카드 문구', o.card, { wide: true })}
         <label class="field wide"><span class="label">메모</span>
           <textarea name="memo" rows="2" placeholder="요청사항">${esc(o.memo)}</textarea></label>
         <label class="check wide"><input type="checkbox" name="paid"${o.paid ? ' checked' : ''}> 💰 입금 확인</label>
       </div>
-      ${o.source ? `<details class="source"><summary>원본 대화 보기</summary><pre>${esc(o.source)}</pre></details>` : ''}`;
+      ${o.source ? `<details class="source"${openSource ? ' open' : ''}><summary>원본 대화 보기</summary><pre>${esc(o.source)}</pre></details>` : ''}`;
   }
 
   function bindMethodToggle(form) {
@@ -284,10 +363,8 @@
     if (!o) return;
     if (btn.dataset.act === 'status') {
       o.status = nextStatus(o.status);
-      o.updatedAt = new Date().toISOString();
-      saveOrders();
       render();
-      toast(`${o.customer || '주문'} → ${statusLabel(o.status)}`);
+      updateOrder(o).then(() => toast(`${o.customer || '주문'} → ${statusLabel(o.status)}`), fail);
     } else if (btn.dataset.act === 'copy') {
       copyText(confirmMessage(o)).then((ok) => toast(ok ? '확인 메시지를 복사했어요. 카톡에 붙여넣으세요.' : '복사하지 못했어요.'));
     } else if (btn.dataset.act === 'edit') {
@@ -358,19 +435,16 @@
       btn.textContent = '한 번 더 누르면 삭제';
       return;
     }
-    orders = orders.filter((o) => o !== editing);
-    saveOrders();
+    const target = editing;
     editDialog.close('deleted');
-    render();
-    toast('주문을 삭제했어요.');
+    deleteOrder(target).then(() => { render(); toast('주문을 삭제했어요.'); }, fail);
   });
 
   editDialog.addEventListener('close', () => {
     if (editDialog.returnValue === 'save' && editing) {
-      Object.assign(editing, readForm(editForm, {}), { updatedAt: new Date().toISOString() });
-      saveOrders();
+      const o = Object.assign(editing, readForm(editForm, {}));
       render();
-      toast('저장했어요.');
+      updateOrder(o).then(() => toast('저장했어요.'), fail);
     }
     editing = null;
   });
@@ -413,14 +487,9 @@
     if (candidates.length) $('#candidates-head').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function addOrder(data) {
-    const now = new Date().toISOString();
-    orders.push({ ...data, id: uid(), status: 'new', createdAt: now, updatedAt: now });
-  }
-
-  function takeCandidate(form, save) {
+  async function takeCandidate(form, save) {
     const i = Number(form.dataset.index);
-    if (save) addOrder(readForm(form, { source: candidates[i].source, key: candidates[i].key, receivedAt: candidates[i].receivedAt }));
+    if (save) await createOrder(readForm(form, { source: candidates[i].source, key: candidates[i].key, receivedAt: candidates[i].receivedAt }));
     form.remove();
     if (!$('#candidates form')) {
       $('#candidates-head').hidden = true;
@@ -434,20 +503,20 @@
 
   $('#candidates').addEventListener('submit', (e) => {
     e.preventDefault();
-    takeCandidate(e.target, true);
-    saveOrders();
-    render();
-    toast('주문을 등록했어요 🌸');
+    takeCandidate(e.target, true).then(() => { render(); toast('주문을 등록했어요 🌸'); }, fail);
   });
   $('#candidates').addEventListener('click', (e) => {
     if (e.target.dataset.act === 'skip') takeCandidate(e.target.closest('form'), false);
   });
-  $('#save-all-btn').addEventListener('click', () => {
+  $('#save-all-btn').addEventListener('click', async () => {
     const forms = $$('#candidates form');
-    forms.forEach((f) => takeCandidate(f, true));
-    saveOrders();
-    render();
-    toast(`주문 ${forms.length}건을 등록했어요 🌸`);
+    try {
+      for (const f of forms) await takeCandidate(f, true);
+      render();
+      toast(`주문 ${forms.length}건을 등록했어요 🌸`);
+    } catch (e) {
+      fail(e);
+    }
   });
 
   $('#parse-btn').addEventListener('click', runParse);
@@ -506,6 +575,8 @@
   $('#settings-btn').addEventListener('click', () => {
     settingsForm.shopName.value = settings.shopName || '';
     settingsForm.chatName.value = settings.chatName || '';
+    settingsForm.serverKey.value = serverKey;
+    renderServerStatus();
     settingsDialog.returnValue = '';
     settingsDialog.showModal();
   });
@@ -514,7 +585,60 @@
     settings = { shopName: settingsForm.shopName.value.trim(), chatName: settingsForm.chatName.value.trim() };
     store(SETTINGS_KEY, settings);
     render();
-    toast('설정을 저장했어요.');
+    const newKey = settingsForm.serverKey.value.trim();
+    if (newKey === serverKey) { toast('설정을 저장했어요.'); return; }
+    connect(newKey);
+  });
+
+  async function connect(newKey) {
+    if (!newKey) {
+      serverKey = '';
+      store(SERVER_KEY, '');
+      orders = load(ORDERS_KEY, []);
+      inboxMessages = [];
+      setConn('local');
+      render();
+      renderInbox();
+      toast('서버 연결을 끊었어요. 이 기기에 저장된 주문을 보여줘요.');
+      return;
+    }
+    try {
+      await api('/ping', { key: newKey });
+    } catch (e) {
+      toast(`⚠️ ${e.message}`);
+      return;
+    }
+    serverKey = newKey;
+    store(SERVER_KEY, newKey);
+    orders = [];
+    await sync({ quiet: false });
+    toast('서버에 연결했어요. 카톡·문자 주문이 자동으로 들어와요.');
+  }
+
+  function renderServerStatus() {
+    const local = load(ORDERS_KEY, []);
+    $('#server-status').textContent = remote()
+      ? `연결됨${lastSync ? ` · 마지막 확인 ${timeLabel(lastSync.toTimeString().slice(0, 5))}` : ''}`
+      : '연결 안 됨 · 주문이 이 기기에만 저장돼요.';
+    const btn = $('#upload-local-btn');
+    btn.hidden = !(remote() && local.length);
+    btn.textContent = `이 기기에 있던 주문 ${local.length}건을 서버로 옮기기`;
+  }
+
+  $('#upload-local-btn').addEventListener('click', async (e) => {
+    const local = load(ORDERS_KEY, []);
+    e.target.disabled = true;
+    try {
+      for (const o of local) await createOrder(orderData(o), [], o.status);
+      store(ORDERS_KEY, []);
+      render();
+      renderServerStatus();
+      toast(`주문 ${local.length}건을 서버로 옮겼어요.`);
+    } catch (err) {
+      fail(err);
+    } finally {
+      e.target.disabled = false;
+    }
   });
 
   function download(name, content, type) {
@@ -550,8 +674,12 @@
       if (!Array.isArray(data.orders)) throw new Error('bad file');
       const ids = new Set(orders.map((o) => o.id));
       const added = data.orders.filter((o) => o && o.id && !ids.has(o.id));
-      orders.push(...added);
-      saveOrders();
+      if (remote()) {
+        for (const o of added) await createOrder(orderData(o), [], o.status);
+      } else {
+        orders.push(...added);
+        saveOrders();
+      }
       render();
       toast(`백업에서 주문 ${added.length}건을 불러왔어요.`);
     } catch {
@@ -569,9 +697,118 @@
     runParse();
   }
 
+  // ---------- 새로 들어온 주문 (서버에 모인 카톡·문자) ----------
+  const BASE_TITLE = document.title;
+  const promoted = new Set();
+  let inboxGroups = new Map();
+
+  const shortTime = (iso) => {
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}/${d.getDate()} ${timeLabel(d.toTimeString().slice(0, 5))}`;
+  };
+  const channelBadge = (c) => (c === 'sms' ? '<span class="badge sms">문자</span>' : '<span class="badge kakao">카톡</span>');
+
+  function renderInbox() {
+    const box = $('#inbox');
+    box.hidden = !remote();
+    if (!remote()) { document.title = BASE_TITLE; return; }
+
+    const msgs = inboxMessages.map((m) => ({ id: m.id, sender: m.sender, phone: m.phone, source: m.source, text: m.body, at: new Date(m.received_at) }));
+    const groups = FlowerParser.parseMessages(msgs).map((g) => ({ ...g, key: g.messageIds.join(',') }));
+    inboxGroups = new Map(groups.map((g) => [g.key, g]));
+    const wanted = groups.filter((g) => g.isOrder || promoted.has(g.key)).reverse();
+    const others = groups.filter((g) => !g.isOrder && !promoted.has(g.key)).reverse();
+
+    // 입력 중인 카드가 지워지지 않도록 그대로 둘 카드는 다시 그리지 않습니다.
+    const list = $('#inbox-list');
+    const existing = new Map($$('form', list).map((f) => [f.dataset.key, f]));
+    const cards = wanted.map((g) => {
+      let f = existing.get(g.key);
+      existing.delete(g.key);
+      if (!f) {
+        f = document.createElement('form');
+        f.className = 'card cand order-form inbox-card';
+        f.dataset.key = g.key;
+        f.innerHTML = `
+          <div class="cand-title">${channelBadge(g.channel)} <strong>${esc(g.sender)}</strong> <span class="muted small">${shortTime(g.receivedAt)}</span></div>
+          ${formHTML(g, true)}
+          <div class="row-actions end">
+            <button type="button" class="btn ghost" data-act="dismiss">주문 아님</button>
+            <button type="submit" class="btn primary">확정</button>
+          </div>`;
+        bindMethodToggle(f);
+      }
+      return f;
+    });
+    existing.forEach((f) => f.remove());
+    const current = [...list.children];
+    if (cards.length !== current.length || cards.some((f, i) => f !== current[i])) cards.forEach((f) => list.appendChild(f));
+
+    $('#inbox-count').textContent = wanted.length || '';
+    $('#inbox-empty').hidden = wanted.length > 0;
+    $('#inbox-empty').textContent = `새 주문이 없어요.${lastSync ? ` (마지막 확인 ${timeLabel(lastSync.toTimeString().slice(0, 5))})` : ''}`;
+    $('#inbox-other-wrap').hidden = others.length === 0;
+    $('#inbox-other-count').textContent = others.length;
+    $('#inbox-other').innerHTML = others.map((g) => `
+      <li data-key="${g.key}">
+        <div class="other-text">${channelBadge(g.channel)} <strong>${esc(g.sender)}</strong> <span class="muted small">${shortTime(g.receivedAt)}</span>
+          <p>${esc(g.source.replace(/^.*?\d{2}:\d{2}\s+/gm, '').slice(0, 140))}</p></div>
+        <div class="row-actions">
+          <button type="button" class="btn small" data-act="promote">주문으로 만들기</button>
+          <button type="button" class="btn small ghost" data-act="dismiss">숨기기</button>
+        </div>
+      </li>`).join('');
+    document.title = wanted.length ? `(${wanted.length}) ${BASE_TITLE}` : BASE_TITLE;
+  }
+
+  async function dismissGroup(key) {
+    const g = inboxGroups.get(key);
+    if (!g) return;
+    await api('/messages/dismiss', { method: 'POST', body: { ids: g.messageIds } });
+    inboxMessages = inboxMessages.filter((m) => !g.messageIds.includes(m.id));
+    renderInbox();
+  }
+
+  $('#inbox-list').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const g = inboxGroups.get(f.dataset.key);
+    if (!g) return;
+    f.querySelector('[type=submit]').disabled = true;
+    createOrder(readForm(f, { source: g.source, receivedAt: g.receivedAt, channel: g.channel }), g.messageIds)
+      .then(() => {
+        inboxMessages = inboxMessages.filter((m) => !g.messageIds.includes(m.id));
+        f.remove();
+        renderInbox();
+        render();
+        toast('주문을 확정했어요 🌸');
+      }, (err) => { f.querySelector('[type=submit]').disabled = false; fail(err); });
+  });
+
+  $('#inbox').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const key = btn.closest('[data-key]')?.dataset.key;
+    if (btn.dataset.act === 'dismiss') {
+      btn.disabled = true;
+      dismissGroup(key).then(() => toast('정리했어요.'), fail);
+    } else if (btn.dataset.act === 'promote') {
+      promoted.add(key);
+      renderInbox();
+    }
+  });
+  $('#refresh-btn').addEventListener('click', () => sync({ quiet: false }));
+
+  // 20초마다, 그리고 화면으로 돌아올 때마다 새 메시지를 확인합니다.
+  setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 20000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
+
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
+  setConn(remote() ? 'ok' : 'local');
   render();
+  renderInbox();
+  sync({ quiet: false });
 })();

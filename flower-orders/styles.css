@@ -92,6 +92,12 @@ button, input, textarea { font: inherit; color: inherit; }
   padding: 14px 16px 6px;
 }
 .brand { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 20px; font-weight: 700; }
+.topbar { gap: 10px; }
+.brand { flex: 1; min-width: 0; }
+.conn { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.conn[data-state="ok"] { color: var(--green); }
+.conn[data-state="error"] { color: var(--danger); }
+
 .icon-btn {
   width: 40px; height: 40px;
   border: 1px solid var(--line); border-radius: 50%;
@@ -246,6 +252,33 @@ textarea#paste {
 .cand-head p { margin: 0; font-weight: 600; }
 .cand-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 
+/* ---------- 새로 들어온 주문 ---------- */
+.inbox {
+  margin: 4px 0 16px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.inbox-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.inbox-head h2 { margin: 0; font-size: 17px; }
+.inbox .hint { margin: 4px 0 0; }
+.inbox .count:not(:empty) {
+  display: inline-block; min-width: 22px; padding: 0 7px;
+  border-radius: 999px; background: var(--accent); color: var(--accent-text);
+  font-size: 13px; text-align: center;
+}
+.inbox-empty { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+.inbox-card { border-color: var(--accent); }
+.badge.kakao { background: #fee500; color: #3a1d1d; }
+.badge.sms { background: var(--blue-soft); color: var(--blue); }
+.small { font-size: 13px; }
+.inbox-other { margin-top: 12px; font-size: 14px; }
+.inbox-other summary { cursor: pointer; color: var(--muted); }
+.inbox-other ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.inbox-other li { padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
+.inbox-other p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.inbox-other .row-actions { margin-top: 6px; }
+
 /* ---------- 주문 폼 ---------- */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .wide { grid-column: 1 / -1; }
@@ -295,7 +328,8 @@ dialog.sheet {
 dialog.sheet::backdrop { background: rgba(20, 10, 15, 0.45); }
 dialog h2 { margin: 0 0 12px; font-size: 18px; }
 .settings .field { margin-bottom: 12px; }
-.settings-group { margin-top: 4px; }
+.settings-group { margin-top: 4px; margin-bottom: 14px; }
+.settings-group .field { margin-bottom: 4px; }
 .settings-group .hint { margin-top: 8px; }
 
 /* ---------- 토스트 ---------- */
@@ -318,3 +352,5 @@ dialog h2 { margin: 0 0 12px; font-size: 18px; }
   .when { display: flex; gap: 6px; }
   .form-grid { grid-template-columns: 1fr; }
 }
+
+::placeholder { color: var(--muted); opacity: 0.6; }

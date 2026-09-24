@@ -340,7 +340,7 @@
     const parts = [];
     let m = text.match(/(?:리본|경조사어)\s*(?:문구|글씨|글귀|내용)?\s*(?:에는|에|은|는)?\s*[:：]?\s*([^\n]+)/);
     if (m) {
-      const v = unquote(m[1].replace(/\s*보내는\s*(?:분|사람|이).*$/, '').replace(/\s*(?:이?라고|으로|로)?\s*(?:써|적어|넣어|해)\s*주.*$/, ''));
+      const v = unquote(m[1].replace(/\s*보내는\s*(?:분|사람|이).*$/, '').replace(/\s*(?:이?라고|으로|로)?\s*(?:써|적어|넣어|해)\s*주.*$/, '').replace(/[\s/,]+$/, ''));
       if (v) parts.push(v);
     }
     m = text.match(/보내는\s*(?:분|사람|이)\s*(?:은|는)?\s*[:：]?\s*([^\n]+)/);
@@ -454,5 +454,51 @@
     return { format: 'text', candidates };
   }
 
-  return { parse, parseChat, extractOrder, orderSignal, ymd };
+  const RE_PHONE_ONLY = /^\+?[\d\s().-]{8,}$/;
+  function normalizePhone(p) {
+    let d = String(p || '').replace(/[^\d]/g, '');
+    if (d.startsWith('82')) d = '0' + d.slice(2);
+    const m = d.match(/^(01[016789]|02|0\d{2})(\d{3,4})(\d{4})$/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : String(p || '').trim();
+  }
+
+  /**
+   * 서버로 모인 메시지(카톡 알림·문자)를 보낸 사람별·대화 흐름별로 묶어 주문 후보로 만듭니다.
+   * @param {Array<{id, sender, phone?, source?, text, at: Date}>} messages
+   * @returns {Array} 주문 후보. isOrder가 false면 주문이 아닌 대화(인사·문의 등)입니다.
+   */
+  function parseMessages(messages) {
+    const bySender = new Map();
+    for (const msg of [...messages].sort((a, b) => a.at - b.at)) {
+      const who = (msg.sender || '').trim() || normalizePhone(msg.phone) || '알 수 없음';
+      if (!bySender.has(who)) bySender.set(who, []);
+      bySender.get(who).push(msg);
+    }
+    const out = [];
+    for (const [who, msgs] of bySender) {
+      for (const session of splitSessions(msgs)) {
+        const first = session.messages[0];
+        const text = session.messages.map((m) => m.text).join('\n');
+        const order = extractOrder(text, first.at);
+        const senderIsPhone = RE_PHONE_ONLY.test(who);
+        if (!order.customer && !senderIsPhone) order.customer = who;
+        if (!order.phone) {
+          const p = session.messages.map((m) => m.phone).find(Boolean) || (senderIsPhone ? who : '');
+          if (p) order.phone = normalizePhone(p);
+        }
+        order.isOrder = orderSignal(text) >= 3;
+        order.channel = session.messages.some((m) => m.source === 'sms') ? 'sms' : 'kakao';
+        order.sender = who;
+        order.messageIds = session.messages.map((m) => m.id);
+        order.receivedAt = first.at.toISOString();
+        order.source = session.messages
+          .map((m) => `${ymd(m.at).slice(5).replace('-', '/')} ${fmtTime(m.at)}  ${m.text}`)
+          .join('\n');
+        out.push(order);
+      }
+    }
+    return out.sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+  }
+
+  return { parse, parseChat, parseMessages, extractOrder, orderSignal, ymd };
 });

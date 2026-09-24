@@ -1,7 +1,7 @@
 // 실행: node --test flower-orders/parser.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parse } = require('./parser.js');
+const { parse, parseMessages } = require('./parser.js');
 
 const now = new Date(2026, 8, 24, 18, 0); // 2026-09-24 (목)
 
@@ -80,7 +80,7 @@ test('문자 붙여넣기: 받는 분·주소', () => {
   assert.equal(o.time, '10:00');
   assert.equal(o.method, 'delivery');
   assert.equal(o.address, '경기 성남시 분당구 판교역로 235 3층');
-  assert.match(o.ribbon, /축 개업/);
+  assert.equal(o.ribbon, '축 개업 / 보내는 분: 김지현');
 });
 
 test('문자 여러 건: 빈 줄 두 개로 구분하고 주문 아닌 글은 제외', () => {
@@ -104,4 +104,27 @@ test('가게가 보낸 말만 있는 대화는 주문으로 잡지 않음', () =
 [손님] [오후 1:05] 감사합니다`;
   const { candidates } = parse(text, { now, shopName: '꽃집 봄날' });
   assert.equal(candidates.length, 0);
+});
+
+test('서버 메시지 묶기: 보낸 사람별·4시간 간격으로 나누고 주문 여부 표시', () => {
+  const at = (h, m) => new Date(2026, 8, 24, h, m);
+  const list = parseMessages([
+    { id: 1, sender: '김민지', text: '안녕하세요 꽃다발 주문하려고요', at: at(10, 0) },
+    { id: 2, sender: '', phone: '+82 10-5555-6666', source: 'sms', text: '모레 11시 동양란 배송 부탁드려요', at: at(10, 1) },
+    { id: 3, sender: '김민지', text: '내일 오후 3시 픽업이요 5만원', at: at(10, 2) },
+    { id: 4, sender: '김민지', text: '감사합니다~', at: at(16, 0) },
+  ]);
+  assert.equal(list.length, 3);
+  const [a, b, c] = list;
+  assert.deepEqual(a.messageIds, [1, 3]);
+  assert.equal(a.customer, '김민지');
+  assert.equal(a.isOrder, true);
+  assert.equal(a.date, '2026-09-25');
+  assert.equal(a.time, '15:00');
+  assert.equal(b.phone, '010-5555-6666');
+  assert.equal(b.customer, '');
+  assert.equal(b.channel, 'sms');
+  assert.equal(b.product, '동양란 ×1');
+  assert.deepEqual(c.messageIds, [4]);
+  assert.equal(c.isOrder, false);
 });

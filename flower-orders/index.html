@@ -16,6 +16,7 @@
 <body>
   <header class="topbar">
     <h1 class="brand"><img src="icon.svg" alt="" width="28" height="28"> <span id="brand-name">꽃 주문함</span></h1>
+    <span class="conn" id="conn" data-state="local"></span>
     <button type="button" class="icon-btn" id="settings-btn" aria-label="설정">⚙︎</button>
   </header>
 
@@ -27,6 +28,20 @@
   <main>
     <!-- 주문 목록 -->
     <section class="panel active" id="panel-list">
+      <section class="inbox" id="inbox" hidden>
+        <header class="inbox-head">
+          <h2>새로 들어온 주문 <span class="count" id="inbox-count"></span></h2>
+          <button type="button" class="btn small ghost" id="refresh-btn">새로고침</button>
+        </header>
+        <p class="hint">카톡·문자에서 자동으로 모아 정리했어요. 확인하고 <b>확정</b>하면 아래 주문 목록에 들어가요.</p>
+        <p class="inbox-empty" id="inbox-empty">새 주문이 없어요.</p>
+        <div id="inbox-list"></div>
+        <details class="inbox-other" id="inbox-other-wrap" hidden>
+          <summary>주문이 아닌 것 같은 메시지 <span id="inbox-other-count"></span>건</summary>
+          <ul id="inbox-other"></ul>
+        </details>
+      </section>
+
       <div class="filters" id="filters">
         <button class="chip active" data-filter="upcoming">예정</button>
         <button class="chip" data-filter="today">오늘 <b data-count="today"></b></button>
@@ -83,13 +98,19 @@
       <label class="field"><span class="label">카톡에 표시되는 내 이름</span>
         <input name="chatName" placeholder="단체방·복사한 대화에서 내 말을 빼는 데 써요"></label>
       <div class="settings-group">
+        <label class="field"><span class="label">매장 비밀번호 (카톡·문자 자동 수집 서버)</span>
+          <input name="serverKey" id="server-key" placeholder="예: abcd-efgh-jkmn" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <p class="hint" id="server-status"></p>
+        <button type="button" class="btn small" id="upload-local-btn" hidden></button>
+      </div>
+      <div class="settings-group">
         <span class="label">내보내기·백업</span>
         <div class="row-actions">
           <button type="button" class="btn" id="csv-btn">엑셀(CSV) 내보내기</button>
           <button type="button" class="btn" id="backup-btn">백업 파일 저장</button>
           <label class="btn file-btn">백업 불러오기<input type="file" id="restore-input" accept=".json,application/json" hidden></label>
         </div>
-        <p class="hint">주문은 이 기기의 브라우저에만 저장돼요. 가끔 백업 파일을 저장해 두세요.</p>
+        <p class="hint">서버에 연결하지 않으면 주문은 이 기기의 브라우저에만 저장돼요.</p>
       </div>
       <div class="row-actions end">
         <button value="cancel" class="btn">닫기</button>
