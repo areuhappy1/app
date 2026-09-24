@@ -351,8 +351,13 @@
   }
 
   editForm.addEventListener('click', (e) => {
-    if (e.target.dataset.act !== 'delete' || !editing) return;
-    if (!confirm('이 주문을 삭제할까요?')) return;
+    const btn = e.target.closest('[data-act=delete]');
+    if (!btn || !editing) return;
+    if (!btn.dataset.armed) {
+      btn.dataset.armed = '1';
+      btn.textContent = '한 번 더 누르면 삭제';
+      return;
+    }
     orders = orders.filter((o) => o !== editing);
     saveOrders();
     editDialog.close('deleted');

@@ -1,5 +1,5 @@
 // 오프라인에서도 열리도록 앱 파일을 캐시합니다. 파일을 바꾸면 CACHE 버전을 올려 주세요.
-const CACHE = 'flower-orders-v1';
+const CACHE = 'flower-orders-v2';
 const FILES = ['./', './index.html', './styles.css', './parser.js', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (e) => {
