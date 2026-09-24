@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="카톡·문자로 받은 꽃 주문을 붙여넣으면 주문 목록으로 정리해 줍니다.">
+  <meta name="theme-color" content="#c2456b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="꽃 주문함">
+  <title>꽃 주문함</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand"><img src="icon.svg" alt="" width="28" height="28"> <span id="brand-name">꽃 주문함</span></h1>
+    <button type="button" class="icon-btn" id="settings-btn" aria-label="설정">⚙︎</button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="list" role="tab" aria-selected="true">주문 목록 <span class="count" id="tab-count"></span></button>
+    <button class="tab" data-tab="add" role="tab" aria-selected="false">＋ 주문 넣기</button>
+  </nav>
+
+  <main>
+    <!-- 주문 목록 -->
+    <section class="panel active" id="panel-list">
+      <div class="filters" id="filters">
+        <button class="chip active" data-filter="upcoming">예정</button>
+        <button class="chip" data-filter="today">오늘 <b data-count="today"></b></button>
+        <button class="chip" data-filter="tomorrow">내일 <b data-count="tomorrow"></b></button>
+        <button class="chip" data-filter="week">7일</button>
+        <button class="chip" data-filter="past">지난 주문</button>
+        <button class="chip" data-filter="all">전체</button>
+      </div>
+      <div class="list-tools">
+        <input type="search" id="search" placeholder="이름·번호·상품·주소 검색" autocomplete="off">
+        <label class="toggle"><input type="checkbox" id="hide-done" checked> 완료 숨기기</label>
+      </div>
+      <div id="order-list"></div>
+      <p class="empty" id="empty" hidden></p>
+    </section>
+
+    <!-- 주문 넣기 -->
+    <section class="panel" id="panel-add">
+      <div class="card">
+        <h2 class="card-title">카톡 대화나 문자를 붙여넣으세요</h2>
+        <p class="hint">카톡 대화방 메뉴의 <b>대화 내보내기</b>로 받은 파일, 메시지 <b>복사</b>, 문자 내용 모두 됩니다.
+          여러 문자는 <b>빈 줄 두 줄</b>로 나눠 주세요.</p>
+        <textarea id="paste" rows="8" placeholder="[김민지] [오후 2:03] 내일 3시에 꽃다발 픽업 가능할까요?&#10;[김민지] [오후 2:06] 5만원 정도로 핑크톤이요"></textarea>
+        <div class="row-actions">
+          <button type="button" class="btn" id="clipboard-btn">📋 클립보드에서 붙여넣기</button>
+          <label class="btn file-btn">📄 대화 파일 열기<input type="file" id="file-input" accept=".txt,.csv,text/plain" hidden></label>
+          <button type="button" class="btn ghost" id="sample-btn">예시로 해보기</button>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="btn primary grow" id="parse-btn">주문 찾기</button>
+          <button type="button" class="btn" id="manual-btn">직접 입력</button>
+        </div>
+      </div>
+
+      <div id="candidates-head" class="cand-head" hidden>
+        <p id="candidates-summary"></p>
+        <button type="button" class="btn primary small" id="save-all-btn">모두 등록</button>
+      </div>
+      <div id="candidates"></div>
+    </section>
+  </main>
+
+  <!-- 주문 수정 -->
+  <dialog id="edit-dialog" class="sheet">
+    <form method="dialog" id="edit-form" class="order-form"></form>
+  </dialog>
+
+  <!-- 설정 -->
+  <dialog id="settings-dialog" class="sheet">
+    <form method="dialog" id="settings-form" class="settings">
+      <h2>설정</h2>
+      <label class="field"><span class="label">가게 이름 (확인 메시지에 들어가요)</span>
+        <input name="shopName" placeholder="예: 꽃집 봄날"></label>
+      <label class="field"><span class="label">카톡에 표시되는 내 이름</span>
+        <input name="chatName" placeholder="단체방·복사한 대화에서 내 말을 빼는 데 써요"></label>
+      <div class="settings-group">
+        <span class="label">내보내기·백업</span>
+        <div class="row-actions">
+          <button type="button" class="btn" id="csv-btn">엑셀(CSV) 내보내기</button>
+          <button type="button" class="btn" id="backup-btn">백업 파일 저장</button>
+          <label class="btn file-btn">백업 불러오기<input type="file" id="restore-input" accept=".json,application/json" hidden></label>
+        </div>
+        <p class="hint">주문은 이 기기의 브라우저에만 저장돼요. 가끔 백업 파일을 저장해 두세요.</p>
+      </div>
+      <div class="row-actions end">
+        <button value="cancel" class="btn">닫기</button>
+        <button value="save" class="btn primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="parser.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

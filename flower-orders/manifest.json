@@ -1,0 +1,19 @@
+{
+  "name": "꽃 주문함",
+  "short_name": "꽃 주문함",
+  "description": "카톡·문자로 받은 꽃 주문을 한곳에 정리합니다.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fbf7f4",
+  "theme_color": "#c2456b",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "GET",
+    "params": { "title": "title", "text": "text" }
+  }
+}
