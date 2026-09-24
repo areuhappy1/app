@@ -62,15 +62,17 @@
     <!-- 주문 넣기 -->
     <section class="panel" id="panel-add">
       <div class="card">
-        <h2 class="card-title">카톡 대화나 문자를 붙여넣으세요</h2>
+        <h2 class="card-title">카톡 대화, 문자, 캡처 사진을 넣으세요</h2>
         <p class="hint">카톡 대화방 메뉴의 <b>대화 내보내기</b>로 받은 파일, 메시지 <b>복사</b>, 문자 내용 모두 됩니다.
-          여러 문자는 <b>빈 줄 두 줄</b>로 나눠 주세요.</p>
+          여러 문자는 <b>빈 줄 두 줄</b>로 나눠 주세요. <b>캡처·주문서 사진</b>을 넣으면 글자를 읽어서 채워요.</p>
         <textarea id="paste" rows="8" placeholder="[김민지] [오후 2:03] 내일 3시에 꽃다발 픽업 가능할까요?&#10;[김민지] [오후 2:06] 5만원 정도로 핑크톤이요"></textarea>
         <div class="row-actions">
           <button type="button" class="btn" id="clipboard-btn">📋 클립보드에서 붙여넣기</button>
+          <label class="btn file-btn">🖼️ 사진·캡처 읽기<input type="file" id="image-input" accept="image/*" multiple hidden></label>
           <label class="btn file-btn">📄 대화 파일 열기<input type="file" id="file-input" accept=".txt,.csv,text/plain" hidden></label>
           <button type="button" class="btn ghost" id="sample-btn">예시로 해보기</button>
         </div>
+        <p class="ocr-status" id="ocr-status" role="status" hidden></p>
         <div class="row-actions">
           <button type="button" class="btn primary grow" id="parse-btn">주문 찾기</button>
           <button type="button" class="btn" id="manual-btn">직접 입력</button>

@@ -546,6 +546,137 @@
     runParse();
   });
 
+  // ---------- 사진에서 글자 읽기 ----------
+  // Tesseract.js로 브라우저 안에서 읽습니다. 사진은 서버로 보내지 않습니다.
+  // 처음 한 번은 한국어 글자 인식 파일(약 10MB)을 받아야 해서 조금 걸립니다.
+  const TESSERACT_SRC = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+  let ocrWorker = null;
+  let ocrProgress = () => {};
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('글자 인식 도구를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function getOcr() {
+    if (!window.Tesseract) await loadScript(TESSERACT_SRC);
+    if (!ocrWorker) ocrWorker = await Tesseract.createWorker(['kor', 'eng'], 1, { logger: (m) => ocrProgress(m) });
+    return ocrWorker;
+  }
+
+  // 글자 인식이 한글 사이에 띄어쓰기를 넣는 경우("꽃 다 발")를 붙여 줍니다.
+  function tidyOcr(text) {
+    return text
+      .split('\n')
+      .map((line) => {
+        const tokens = line.trim().split(/\s+/);
+        const single = tokens.filter((t) => /^[가-힣]$/.test(t)).length;
+        return tokens.length > 3 && single / tokens.length > 0.5 ? line.replace(/(?<=[가-힣])\s+(?=[가-힣])/g, '') : line;
+      })
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  // 카톡 캡처처럼 색 배경 위 말풍선 글자는 그대로 읽으면 놓치기 쉬워서,
+  // 글자만 검게 남기는 흑백 이미지로 바꾸고 작은 이미지는 2배로 키웁니다. 어두운 화면은 뒤집습니다.
+  async function prepareImage(file) {
+    const bmp = await createImageBitmap(file);
+    const scale = bmp.width < 1000 ? 2 : 1;
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width * scale;
+    canvas.height = bmp.height * scale;
+    const g = canvas.getContext('2d');
+    g.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const img = g.getImageData(0, 0, canvas.width, canvas.height);
+    const d = img.data;
+    const n = d.length / 4;
+    const lum = new Float32Array(n);
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      lum[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+      sum += lum[i];
+    }
+    const dark = sum / n < 110;
+    for (let i = 0; i < n; i++) {
+      const l = dark ? 255 - lum[i] : lum[i];
+      const v = l < 140 ? 0 : 255;
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+      d[i * 4 + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    return canvas;
+  }
+
+  const hangulCount = (t) => (t.match(/[가-힣]/g) || []).length;
+
+  // 흑백 처리한 이미지로 먼저 읽고, 글자가 거의 없으면 원본으로도 읽어 더 많이 읽힌 쪽을 씁니다.
+  async function recognize(worker, file) {
+    let text = '';
+    try {
+      text = (await worker.recognize(await prepareImage(file))).data.text;
+    } catch { /* 이미지 변환이 안 되는 브라우저는 원본으로 읽습니다 */ }
+    if (hangulCount(text) < 10) {
+      const raw = (await worker.recognize(file)).data.text;
+      if (hangulCount(raw) > hangulCount(text)) text = raw;
+    }
+    return text;
+  }
+
+  async function readImages(files) {
+    const images = [...files].filter((f) => f.type.startsWith('image/'));
+    if (!images.length) return;
+    const status = $('#ocr-status');
+    status.hidden = false;
+    const texts = [];
+    try {
+      for (let i = 0; i < images.length; i++) {
+        const label = images.length > 1 ? `사진 ${i + 1}/${images.length} · ` : '';
+        status.textContent = `${label}글자 인식 준비 중… (처음 한 번은 1분 정도 걸릴 수 있어요)`;
+        ocrProgress = (m) => {
+          if (m.status === 'recognizing text') status.textContent = `${label}글자 읽는 중… ${Math.round(m.progress * 100)}%`;
+        };
+        const worker = await getOcr();
+        texts.push(tidyOcr(await recognize(worker, images[i])));
+      }
+    } catch (e) {
+      status.hidden = true;
+      toast(`⚠️ ${e.message || '사진을 읽지 못했어요.'}`);
+      return;
+    }
+    status.hidden = true;
+    const found = texts.filter(Boolean);
+    if (!found.length) { toast('사진에서 글자를 찾지 못했어요.'); return; }
+    // 사진마다 --- 줄로 나눠 따로 주문을 찾습니다. 한 주문이 사진 여러 장이면 --- 줄을 지우고 다시 찾으면 돼요.
+    paste.value = found.join('\n---\n');
+    runParse();
+    toast(found.length > 1
+      ? '사진마다 따로 정리했어요. 한 주문이 여러 장이면 --- 줄을 지우고 다시 "주문 찾기"를 누르세요.'
+      : '사진의 글자를 읽었어요. 틀린 글자는 고쳐 주세요.');
+  }
+
+  $('#image-input').addEventListener('change', (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    readImages(files);
+  });
+
+  // PC에서 캡처 이미지를 바로 붙여넣거나 끌어다 놓아도 읽습니다.
+  paste.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
+    if (files.length) { e.preventDefault(); readImages(files); }
+  });
+  paste.addEventListener('dragover', (e) => e.preventDefault());
+  paste.addEventListener('drop', (e) => {
+    const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith('image/'));
+    if (files.length) { e.preventDefault(); readImages(files); }
+  });
+
   $('#sample-btn').addEventListener('click', () => {
     const d = (n) => { const x = new Date(); x.setDate(x.getDate() + n); return x; };
     const line = (x) => `--------------- ${x.getFullYear()}년 ${x.getMonth() + 1}월 ${x.getDate()}일 ${DOW[x.getDay()]}요일 ---------------`;
