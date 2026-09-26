@@ -154,3 +154,22 @@ test('자유 문장: 장례식장 주소·도로명·리본 뽑기', () => {
   assert.equal(o2.address, '테헤란로 152');
   assert.equal(o2.ribbon, '축 발전');
 });
+
+test('한글 숫자 금액·전화번호, 라벨 없는 리본', () => {
+  const now = new Date(2026, 8, 26, 10, 0);
+  const p = (t) => parse(t, { now }).candidates[0];
+  assert.equal(p('내일 3시 꽃다발 오만원어치 픽업 김민지').price, 50000);
+  assert.equal(p('근조화환 십만원짜리 배송').price, 100000);
+  assert.equal(p('꽃바구니 만오천원짜리 오늘 픽업').price, 15000);
+  assert.equal(p('개업화환 두개 이십만원 배송').price, 200000);
+  assert.equal(p('동양란 십이만원 배송 회사로').price, 120000);
+  assert.equal(p('공일공 이삼사오 육칠팔구 모레 꽃다발 칠만원').phone, '010-2345-6789');
+  assert.equal(p('승진 화환 하나 축 승진 이라고 써서 여의도 국제금융로 10 배송').ribbon, '축 승진');
+});
+
+test('금액 아닌 말은 금액으로 잡지 않는다', () => {
+  const now = new Date(2026, 8, 26, 10, 0);
+  const price = (t) => require('./parser.js').extractOrder(t, now).price;
+  assert.equal(price('내일 만나서 꽃다발 픽업'), null);
+  assert.equal(price('천천히 준비해주세요 화분 하나'), null);
+});

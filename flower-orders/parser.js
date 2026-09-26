@@ -268,20 +268,44 @@
     return parts.join(', ');
   }
 
-  // 금액
+  // 금액 — 한글 숫자(오만원·만오천원·이십만원)도 읽습니다.
+  const SINO = { 영: 0, 일: 1, 이: 2, 삼: 3, 사: 4, 오: 5, 육: 6, 칠: 7, 팔: 8, 구: 9 };
+  const SINO_UNIT = { 십: 10, 백: 100, 천: 1000 };
+  function korToInt(str) {
+    let total = 0, section = 0, cur = 0, saw = false;
+    for (const ch of str) {
+      if (ch in SINO) { cur = SINO[ch]; saw = true; }
+      else if (ch in SINO_UNIT) { section += (cur || 1) * SINO_UNIT[ch]; cur = 0; saw = true; }
+      else if (ch === '만') { section += cur; total += (section || 1) * 10000; section = 0; cur = 0; saw = true; }
+      else if (ch === '억') { section += cur; total += (section || 1) * 1e8; section = 0; cur = 0; saw = true; }
+    }
+    return saw ? total + section + cur : NaN;
+  }
+
   function findPrice(text) {
     const found = [];
     let m;
     for (m of text.matchAll(/(\d+(?:\.\d+)?)\s*만(?![들드나큼])(?:\s*(\d)\s*천)?\s*원?/g)) found.push({ index: m.index, value: Math.round(parseFloat(m[1]) * 10000) + (m[2] ? +m[2] * 1000 : 0) });
     for (m of text.matchAll(/(\d{1,3}(?:,\d{3})+|\d{4,7})\s*원/g)) found.push({ index: m.index, value: parseInt(m[1].replace(/,/g, ''), 10) });
     for (m of text.matchAll(/(\d{1,2})\s*천\s*원/g)) found.push({ index: m.index, value: +m[1] * 1000 });
+    // 한글 숫자 금액: '...만/천/원'으로 끝나는 한글 수 표현
+    for (m of text.matchAll(/([영일이삼사오육칠팔구십백천만억]*[만천])\s*원|([영일이삼사오육칠팔구십백천만억]*만)(?=\s*원|짜리|어치|정도|선|권|\b)/g)) {
+      const tok = m[1] || m[2];
+      if (!tok) continue;
+      const v = korToInt(tok);
+      if (!isNaN(v)) found.push({ index: m.index, value: v });
+    }
     const ok = found.filter((f) => f.value >= 5000 && f.value <= 5000000).sort((a, b) => a.index - b.index);
     return ok.length ? ok[0].value : null;
   }
 
-  // 전화번호
+  // 전화번호 — 한글로 부른 번호(공일공 이삼사오 …)도 숫자로 바꿔 읽습니다.
+  const KDIGIT = { 공: '0', 영: '0', 일: '1', 이: '2', 삼: '3', 사: '4', 오: '5', 육: '6', 칠: '7', 팔: '8', 구: '9' };
+  function normalizeSpokenDigits(text) {
+    return text.replace(/(?:[공영일이삼사오육칠팔구]\s*){7,}/g, (run) => run.replace(/[공영일이삼사오육칠팔구]/g, (c) => KDIGIT[c]).replace(/\s+/g, ''));
+  }
   const RE_PHONE = /(?<!\d)(01[016789]|0\d{1,2})[-.\s]?(\d{3,4})[-.\s]?(\d{4})(?!\d)/g;
-  const findPhones = (text) => [...text.matchAll(RE_PHONE)].map((m) => ({ index: m.index, value: `${m[1]}-${m[2]}-${m[3]}` }));
+  const findPhones = (text) => [...normalizeSpokenDigits(text).matchAll(RE_PHONE)].map((m) => ({ index: m.index, value: `${m[1]}-${m[2]}-${m[3]}` }));
 
   // 이름 뒤에 올 수 있는 말 (조사·호칭·구분자)
   const NAME_END = '(?=님|씨|\\s|,|\\.|/|\\(|\\)|$|\\d|이고|이에요|입니다|이요|요|에게|한테)';
@@ -361,10 +385,19 @@
     }
     // 라벨 없이 "축 발전 이라고 써서"처럼 온 경우
     if (!parts.length) {
+      let v = '';
       const q = text.match(/["“']([^"”'\n]{1,30})["”']\s*(?:이?라고\s*)?(?:써|적어|넣어)/);
-      const b = text.match(/(?:^|\s)((?:축|근조|삼가|경축|축하)\s?[가-힣\s]{1,20}?)\s*이?라고\s*(?:써|적어|넣어)/);
-      const v = unquote((q && q[1]) || (b && b[1]) || '');
-      if (v) parts.push(v);
+      if (q) v = q[1];
+      else {
+        const idx = text.search(/이?라고\s*(?:써|적어|넣어)/);
+        if (idx > 0) {
+          const before = text.slice(0, idx);
+          let last = -1, mm; const re = /(?:축|근조|삼가|경축)/g;
+          while ((mm = re.exec(before))) last = mm.index;
+          if (last >= 0) v = before.slice(last).trim();
+        }
+      }
+      if (unquote(v)) parts.push(unquote(v));
     }
     return parts.join(' / ');
   }
