@@ -818,15 +818,34 @@
     }
   });
 
-  // ---------- 공유하기로 들어온 글 (안드로이드 홈 화면 앱) ----------
-  const params = new URLSearchParams(location.search);
-  const shared = [params.get('title'), params.get('text')].filter(Boolean).join('\n');
-  if (shared) {
+  // ---------- 다른 앱에서 공유로 들어온 글·사진 (홈 화면에 설치한 앱) ----------
+  async function takeShared() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('shared') && !params.has('text')) return;
     history.replaceState(null, '', location.pathname);
     showTab('add');
-    paste.value = shared;
-    runParse();
+    let text = [params.get('title'), params.get('text')].filter(Boolean).join('\n');
+    const images = [];
+    try {
+      const cache = await caches.open('flower-share');
+      for (const req of await cache.keys()) {
+        const res = await cache.match(req);
+        if (req.url.endsWith('shared/text')) text = [text, await res.text()].filter(Boolean).join('\n');
+        else {
+          const blob = await res.blob();
+          images.push(new File([blob], `공유사진-${images.length + 1}`, { type: blob.type || 'image/png' }));
+        }
+        await cache.delete(req);
+      }
+    } catch { /* 공유 보관함을 못 여는 브라우저 */ }
+    if (images.length) {
+      await readImages(images);
+    } else if (text) {
+      paste.value = text;
+      runParse();
+    }
   }
+  takeShared();
 
   // ---------- 새로 들어온 주문 (서버에 모인 카톡·문자) ----------
   const BASE_TITLE = document.title;

@@ -1,7 +1,7 @@
 {
   "name": "꽃 주문함",
   "short_name": "꽃 주문함",
-  "description": "카톡·문자로 받은 꽃 주문을 한곳에 정리합니다.",
+  "description": "카톡·문자 주문을 복사하거나 캡처해서 공유하면 주문 목록으로 정리합니다.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -9,11 +9,47 @@
   "theme_color": "#c2456b",
   "lang": "ko",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ],
   "share_target": {
-    "action": "./index.html",
-    "method": "GET",
-    "params": { "title": "title", "text": "text" }
+    "action": "./share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "images",
+          "accept": [
+            "image/*"
+          ]
+        }
+      ]
+    }
   }
 }
