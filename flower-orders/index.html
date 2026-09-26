@@ -26,6 +26,14 @@
   </nav>
 
   <main>
+    <section class="reminder-panel" aria-labelledby="reminder-title">
+      <div class="reminder-heading"><h2 id="reminder-title">확인할 주문 <span id="reminder-count" class="count"></span></h2>
+        <button type="button" class="btn small" id="enable-notifications">기기 알림 켜기</button></div>
+      <p id="notification-status" class="hint" role="status"></p>
+      <p class="hint">앱을 닫으면 새 알림을 보내지 못해요. 닫은 뒤에도 수령 알림이 필요하면 주문 상세에서 캘린더에 추가해 주세요.</p>
+      <div id="reminder-list"></div>
+      <details><summary>확인·미룬 알림 <span id="reminder-history-count"></span></summary><div id="reminder-history"></div></details>
+    </section>
     <!-- 주문 목록 -->
     <section class="panel" id="panel-list">
       <section class="inbox" id="inbox" hidden>
@@ -52,7 +60,7 @@
         <button class="chip" data-filter="all">전체</button>
       </div>
       <div class="list-tools">
-        <input type="search" id="search" placeholder="이름·번호·상품·주소 검색" autocomplete="off">
+        <input type="search" id="search" placeholder="주문자·지역·번호·상품·주소 검색" autocomplete="off">
         <label class="toggle"><input type="checkbox" id="hide-done" checked> 완료 숨기기</label>
       </div>
       <div id="order-list"></div>
@@ -89,6 +97,17 @@
     </section>
   </main>
 
+  <dialog id="detail-dialog" class="sheet" aria-labelledby="detail-title">
+    <div class="detail-heading"><h2 id="detail-title">주문 상세</h2><button type="button" class="btn small" id="detail-close">닫기</button></div>
+    <div id="detail-content"></div>
+    <div class="row-actions">
+      <button type="button" class="btn primary" id="detail-edit">수정</button>
+      <button type="button" class="btn" id="detail-copy">확인 메시지 복사</button>
+      <button type="button" class="btn" id="detail-calendar">캘린더에 추가</button>
+    </div>
+    <p class="hint">캘린더 파일을 열고 일정 저장을 완료해 주세요. 알림 허용 여부도 확인해 주세요. 주문 변경·취소는 캘린더에 자동 반영되지 않아요.</p>
+  </dialog>
+
   <!-- 주문 수정 -->
   <dialog id="edit-dialog" class="sheet">
     <form method="dialog" id="edit-form" class="order-form"></form>
@@ -98,6 +117,7 @@
   <dialog id="settings-dialog" class="sheet">
     <form method="dialog" id="settings-form" class="settings">
       <h2>설정</h2>
+      <label class="field"><span class="label">수령 전 알림</span><select name="reminderMinutes"><option value="30">30분 전</option><option value="60">1시간 전</option><option value="120">2시간 전</option></select></label>
       <label class="field"><span class="label">가게 이름 (확인 메시지에 들어가요)</span>
         <input name="shopName" placeholder="예: 꽃집 봄날"></label>
       <label class="field"><span class="label">카톡에 표시되는 내 이름</span>
@@ -127,6 +147,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="parser.js"></script>
+  <script src="order-tools.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
