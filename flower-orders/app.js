@@ -538,6 +538,9 @@
     if (!text) { toast('먼저 대화나 문자를 붙여넣어 주세요.'); return; }
     const { format, candidates: found } = FlowerParser.parse(text, { shopName: settings.chatName });
     candidates = found.map((c) => ({ ...c, key: hash(c.source || '') }));
+    for (const c of candidates) {
+      if (!c.customer && c.phone) { const n = customerByPhone(c.phone); if (n) { c.customer = n; c.autoName = true; } }
+    }
     renderCandidates(format);
     if (!found.length) toast('주문으로 보이는 내용을 못 찾았어요. 직접 입력해 주세요.');
   }
@@ -555,7 +558,8 @@
       const dup = c.source && orders.some((o) => o.key === c.key);
       const when = [c.date ? dayLabel(c.date).replace(/ · .*$/, '') : '날짜 미정', c.time ? timeLabel(c.time) : ''].filter(Boolean).join(' ');
       const noName = !c.customer;
-      const summary = [noName ? '' : esc(c.customer), when, esc(c.product) || '상품 미정', c.price ? won(c.price) : ''].filter(Boolean).join(' · ');
+      const nameLabel = noName ? '' : esc(c.customer) + (c.autoName ? ' <span class="tag-auto">단골 자동</span>' : '');
+      const summary = [nameLabel, when, esc(c.product) || '상품 미정', c.price ? won(c.price) : ''].filter(Boolean).join(' · ');
       const miss = [];
       if (!c.product) miss.push('상품');
       if (!c.date) miss.push('날짜');
@@ -585,6 +589,17 @@
     if (candidates.length) $('#candidates-head').scrollIntoView({ behavior: 'smooth', block: 'start' });
     const nameInput = $('#candidates .name-ask input');
     if (nameInput) setTimeout(() => { nameInput.focus(); }, 60);
+  }
+
+  const digits = (p) => String(p || '').replace(/[^\d]/g, '');
+  // 같은 번호로 전에 주문한 고객 이름을 찾아 줍니다.
+  function customerByPhone(phone) {
+    const d = digits(phone);
+    if (d.length < 9) return '';
+    for (const o of [...orders].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))) {
+      if (o.customer && (digits(o.phone) === d || digits(o.recipientPhone) === d)) return o.customer;
+    }
+    return '';
   }
 
   function recentCustomers() {
