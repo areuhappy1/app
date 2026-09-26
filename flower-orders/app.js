@@ -4,6 +4,10 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
   const { ymd } = FlowerParser;
+  const { regionLabel, reminders, isVisible, calendar } = FlowerOrderTools;
+  const ALERT_KEY = 'flower-orders.alerts.v1';
+  let currentAlerts = [];
+  let detailId = null;
 
   // ---------- 저장소 ----------
   const ORDERS_KEY = 'flower-orders.v1';
@@ -159,7 +163,8 @@
     const missing = (v) => (v ? '' : ' missing');
     return `
       <div class="form-grid">
-        ${field('customer', '고객명', o.customer)}
+        ${field('customer', '주문자 이름', o.customer)}
+        ${field('region', '지역명', regionLabel(o), { placeholder: '예: 서울 강남구 / 직접 입력 가능' })}
         ${field('phone', '연락처', o.phone, { type: 'tel', placeholder: '예: 010-1234-5678' })}
         <label class="field wide${missing(o.product)}"><span class="label">상품</span>
           <input name="product" value="${esc(o.product)}" placeholder="예: 꽃다발 ×1, 동양란 ×1" autocomplete="off"></label>
@@ -201,6 +206,7 @@
     return {
       ...base,
       customer: get('customer'),
+      region: get('region'),
       phone: get('phone'),
       product: get('product'),
       price: price ? Number(price) : null,
@@ -238,7 +244,7 @@
       case 'today': return o.date === t;
       case 'tomorrow': return o.date === shiftDay(1);
       case 'week': return o.date >= t && o.date <= shiftDay(6);
-      case 'upcoming': return !o.date || o.date >= t;
+      case 'upcoming': return o.status !== 'done' || !o.date || o.date >= t;
       case 'past': return o.date && o.date < t;
       default: return true;
     }
@@ -247,7 +253,7 @@
   function matchesQuery(o) {
     if (!view.query) return true;
     const q = view.query.toLowerCase().replace(/-/g, '');
-    return [o.customer, o.phone, o.product, o.address, o.recipient, o.recipientPhone, o.ribbon, o.memo, o.style]
+    return [o.customer, regionLabel(o), o.phone, o.product, o.address, o.recipient, o.recipientPhone, o.ribbon, o.memo, o.style]
       .join(' ').toLowerCase().replace(/-/g, '').includes(q);
   }
 
@@ -281,9 +287,10 @@
     if (o.memo) lines.push(`<div class="meta">📝 ${esc(o.memo)}</div>`);
 
     return `
-      <li class="order status-${o.status}" data-id="${o.id}">
+      <li class="order status-${o.status}" data-id="${esc(o.id)}" tabindex="0" aria-label="${esc(o.customer || '주문자 미정')} 주문 상세보기">
         <div class="when">${o.time ? `<strong>${timeLabel(o.time)}</strong>` : '<span class="muted">시간 미정</span>'}</div>
         <div class="body">
+          <div class="order-identity"><strong>${esc(o.customer || '주문자 미정')}</strong><span class="region-label">${esc(regionLabel(o) || '지역 미정')}</span></div>
           <div class="head">
             <span class="product">${esc(o.product) || '<span class="muted">상품 미정</span>'}</span>
             ${method}
@@ -292,6 +299,7 @@
           </div>
           ${lines.join('')}
           <div class="actions">
+            <button type="button" class="btn small" data-act="detail">상세보기</button>
             <button type="button" class="status-btn" data-act="status" title="눌러서 다음 단계로">${statusLabel(o.status)} ▸</button>
             <button type="button" class="btn small" data-act="copy">확인 메시지 복사</button>
             <button type="button" class="btn small ghost" data-act="edit">수정</button>
@@ -303,7 +311,9 @@
   function render() {
     const t = today();
     const active = orders.filter((o) => o.status !== 'done');
-    $('#tab-count').textContent = active.filter((o) => !o.date || o.date >= t).length || '';
+    $('#tab-count').textContent = active.length || '';
+    renderAlerts();
+    if (detailId && $('#detail-dialog').open) fillDetail();
     $('[data-count=today]').textContent = active.filter((o) => o.date === t).length || '';
     $('[data-count=tomorrow]').textContent = active.filter((o) => o.date === shiftDay(1)).length || '';
     $('#brand-name').textContent = settings.shopName ? `${settings.shopName} 주문함` : '꽃 주문함';
@@ -357,12 +367,15 @@
   $('#hide-done').addEventListener('change', (e) => { view.hideDone = e.target.checked; render(); });
 
   $('#order-list').addEventListener('click', (e) => {
+    const card = e.target.closest('.order');
+    if (!card || e.target.closest('a')) return;
     const btn = e.target.closest('button[data-act]');
-    if (!btn) return;
-    const id = btn.closest('.order').dataset.id;
+    const id = card.dataset.id;
     const o = orders.find((x) => x.id === id);
     if (!o) return;
-    if (btn.dataset.act === 'status') {
+    if (!btn || btn.dataset.act === 'detail') {
+      openDetail(o);
+    } else if (btn.dataset.act === 'status') {
       o.status = nextStatus(o.status);
       render();
       updateOrder(o).then(() => toast(`${o.customer || '주문'} → ${statusLabel(o.status)}`), fail);
@@ -370,6 +383,14 @@
       copyText(confirmMessage(o)).then((ok) => toast(ok ? '확인 메시지를 복사했어요. 카톡에 붙여넣으세요.' : '복사하지 못했어요.'));
     } else if (btn.dataset.act === 'edit') {
       openEditor(o);
+    }
+  });
+
+  $('#order-list').addEventListener('keydown', (e) => {
+    if (e.target.matches('.order') && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      const o = orders.find((x) => x.id === e.target.dataset.id);
+      if (o) openDetail(o);
     }
   });
 
@@ -703,6 +724,173 @@
     runParse();
   });
 
+  // ---------- 주문 상세 ----------
+  function openDetail(o) {
+    detailId = o.id;
+    fillDetail();
+    if (!$('#detail-dialog').open) $('#detail-dialog').showModal();
+  }
+  function fillDetail() {
+    const o = orders.find((x) => x.id === detailId);
+    if (!o) { $('#detail-dialog').close(); detailId = null; return; }
+    const rows = [
+      ['주문자 이름', o.customer], ['주문자 연락처', o.phone], ['지역명', regionLabel(o)],
+      ['상품', o.product], ['금액', o.price == null ? '' : won(o.price)],
+      ['진행 상태', statusLabel(o.status)], ['입금', o.paid ? '입금 확인' : '미확인'],
+      ['수령 일시', `${dayLabel(o.date)} ${timeLabel(o.time) || '시간 미정'}`],
+      ['수령 방법', { pickup: '픽업', delivery: '배송' }[o.method]],
+      ['배송지', o.address], ['받는 분', o.recipient], ['받는 분 연락처', o.recipientPhone],
+      ['꽃·색감', o.style], ['리본 문구', o.ribbon], ['카드 문구', o.card], ['메모', o.memo],
+    ];
+    $('#detail-title').textContent = `${o.customer || '주문자 미정'} · 주문 상세`;
+    $('#detail-content').innerHTML = `<dl class="detail-grid">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || '미입력')}</dd></div>`).join('')}</dl>
+      ${o.source ? `<details class="source"><summary>원본 대화 보기</summary><pre>${esc(o.source)}</pre></details>` : '<p class="hint">저장된 원본 대화가 없어요.</p>'}`;
+  }
+  $('#detail-close').addEventListener('click', () => $('#detail-dialog').close());
+  $('#detail-dialog').addEventListener('close', () => { detailId = null; });
+  $('#detail-edit').addEventListener('click', () => {
+    const o = orders.find((x) => x.id === detailId);
+    $('#detail-dialog').close();
+    if (o) openEditor(o);
+  });
+  $('#detail-copy').addEventListener('click', async () => {
+    const o = orders.find((x) => x.id === detailId);
+    if (o) toast(await copyText(confirmMessage(o)) ? '확인 메시지를 복사했어요.' : '복사하지 못했어요.');
+  });
+  $('#detail-calendar').addEventListener('click', () => {
+    const o = orders.find((x) => x.id === detailId);
+    if (!o) return;
+    try {
+      download(`꽃주문_${o.date}.ics`, calendar(o, settings.reminderMinutes || 60), 'text/calendar;charset=utf-8');
+      toast('파일을 열어 캘린더에 저장해 주세요.');
+    } catch (e) { toast(e.message); }
+  });
+
+  // ---------- 주문 알림 ----------
+  const notifying = new Set();
+  const alertStorageKey = () => `${ALERT_KEY}.${remote() ? hash(serverKey) : 'local'}`;
+  const alertStates = () => load(alertStorageKey(), {});
+  function setAlertState(key, value) {
+    const states = alertStates();
+    states[key] = value;
+    // Keep only alerts still tied to current orders/messages.
+    const valid = new Set(currentAlerts.map((a) => a.key));
+    for (const k of Object.keys(states)) if (!valid.has(k)) delete states[k];
+    store(alertStorageKey(), states);
+  }
+  function notificationStatus() {
+    const enabled = settings.notifications && 'Notification' in window && Notification.permission === 'granted';
+    $('#enable-notifications').textContent = enabled ? '기기 알림 끄기' : '기기 알림 켜기';
+    $('#notification-status').textContent = !('Notification' in window)
+      ? '이 브라우저는 기기 알림을 지원하지 않아요. 아래 알림함을 확인해 주세요.'
+      : Notification.permission === 'denied'
+        ? '기기 알림이 차단되어 있어요. 브라우저 사이트 설정에서 허용할 수 있어요.'
+        : enabled ? '기기 알림 켜짐 · 앱 실행 중에 알려드려요.' : '앱 안 알림은 켜져 있어요. 기기 알림은 버튼을 눌러 허용해 주세요.';
+  }
+  $('#enable-notifications').addEventListener('click', async () => {
+    if (!('Notification' in window)) { notificationStatus(); return; }
+    if (settings.notifications && Notification.permission === 'granted') settings.notifications = false;
+    else {
+      try { settings.notifications = (await Notification.requestPermission()) === 'granted'; }
+      catch { settings.notifications = false; }
+    }
+    store(SETTINGS_KEY, settings);
+    renderAlerts();
+  });
+  function renderAlerts() {
+    currentAlerts = reminders(orders, Date.now(), settings.reminderMinutes || 60);
+    if (remote()) {
+      for (const g of inboxGroups.values()) {
+        if (!g.isOrder && !promoted.has(g.key)) continue;
+        currentAlerts.unshift({ key: `inbox:${g.key}`, type: 'inbox', label: '새 주문 메시지 · 확정이 필요해요', order: g, inboxKey: g.key });
+      }
+    }
+    const states = alertStates();
+    const visible = currentAlerts.filter((a) => isVisible(a, states));
+    const hidden = currentAlerts.filter((a) => !isVisible(a, states));
+    const card = (a, archived = false) => {
+      const o = a.order;
+      const when = [o.date ? dayLabel(o.date) : '날짜 미정', timeLabel(o.time)].filter(Boolean).join(' ');
+      const index = currentAlerts.indexOf(a);
+      return `<article class="reminder-item ${a.type}">
+        <button class="reminder-open" type="button" data-alert="${index}" data-action="open"><strong>${esc(o.customer || o.sender || '주문자 미정')} · ${esc(regionLabel(o) || '지역 미정')}</strong>
+        <span>${esc(a.label)}</span><small>${esc(when)} · ${esc(o.product || '상품 확인 필요')}</small></button>
+        <div class="row-actions">${archived
+          ? `<span class="hint">${states[a.key]?.ack ? '알림 확인됨 · 주문은 아직 미완료' : '10분 뒤 다시 알림'}</span><button type="button" class="btn small" data-alert="${index}" data-action="restore">다시 표시</button>`
+          : `<button type="button" class="btn small" data-alert="${index}" data-action="ack">확인</button><button type="button" class="btn small ghost" data-alert="${index}" data-action="snooze">10분 뒤 알림</button>`}</div>
+      </article>`;
+    };
+    $('#reminder-count').textContent = visible.length || '';
+    $('#reminder-list').innerHTML = visible.length ? visible.map((a) => card(a)).join('') : '<p class="hint">새로 확인할 알림이 없어요.</p>';
+    $('#reminder-history-count').textContent = `${hidden.length}건`;
+    $('#reminder-history').innerHTML = hidden.map((a) => card(a, true)).join('');
+    notificationStatus();
+    if (settings.notifications && 'Notification' in window && Notification.permission === 'granted') {
+      visible.filter((a) => !states[a.key]?.notified).forEach(notifyOrder);
+    }
+  }
+  async function notifyOrder(a) {
+    const storageKey = alertStorageKey();
+    const pendingKey = `${storageKey}:${a.key}`;
+    if (notifying.has(pendingKey)) return;
+    notifying.add(pendingKey);
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (!registration?.active) return;
+      if (storageKey !== alertStorageKey() || !currentAlerts.some((x) => x.key === a.key) || !isVisible(a, alertStates())) return;
+      const target = a.inboxKey ? '#inbox' : `#order=${encodeURIComponent(a.orderId)}`;
+      await registration.showNotification('꽃 주문함 · 확인할 주문이 있어요', {
+        body: `${a.label} · 앱에서 주문 내용을 확인해 주세요.`,
+        tag: `flower-${hash(a.key)}`, icon: './icon-192.png',
+        data: { url: new URL(target, location.href).href },
+      });
+      if (storageKey === alertStorageKey()) setAlertState(a.key, { ...alertStates()[a.key], notified: true });
+    } catch { $('#notification-status').textContent = '기기 알림을 보내지 못했어요. 앱 안 알림함을 확인해 주세요.'; }
+    finally { notifying.delete(pendingKey); }
+  }
+  $('.reminder-panel').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-alert]');
+    if (!btn) return;
+    const a = currentAlerts[Number(btn.dataset.alert)];
+    if (!a) return;
+    if (btn.dataset.action === 'open') {
+      if (a.inboxKey) {
+        showTab('list');
+        const f = $$('#inbox-list form').find((x) => x.dataset.key === a.inboxKey);
+        f?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        f?.querySelector('input')?.focus({ preventScroll: true });
+      } else {
+        const o = orders.find((x) => x.id === a.orderId);
+        if (o) openDetail(o);
+      }
+      return;
+    }
+    setAlertState(a.key, btn.dataset.action === 'ack' ? { ack: true }
+      : btn.dataset.action === 'snooze' ? { until: Date.now() + 10 * 60000 } : {});
+    renderAlerts();
+  });
+  function openNotificationTarget() {
+    if (location.hash === '#inbox') {
+      showTab('list');
+      $('#inbox').scrollIntoView();
+      history.replaceState(null, '', location.pathname + location.search);
+    } else if (location.hash.startsWith('#order=')) {
+      let id;
+      try { id = decodeURIComponent(location.hash.slice(7)); } catch { return; }
+      const o = orders.find((x) => x.id === id);
+      if (o) {
+        showTab('list'); openDetail(o);
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    }
+  }
+  window.addEventListener('hashchange', openNotificationTarget);
+  window.addEventListener('storage', (e) => {
+    if (e.key === alertStorageKey()) renderAlerts();
+    if (!remote() && e.key === ORDERS_KEY) { orders = load(ORDERS_KEY, []); render(); }
+  });
+
   // ---------- 설정·백업 ----------
   const settingsDialog = $('#settings-dialog');
   const settingsForm = $('#settings-form');
@@ -710,13 +898,15 @@
     settingsForm.shopName.value = settings.shopName || '';
     settingsForm.chatName.value = settings.chatName || '';
     settingsForm.serverKey.value = serverKey;
+    settingsForm.reminderMinutes.value = String(settings.reminderMinutes || 60);
+    notificationStatus();
     renderServerStatus();
     settingsDialog.returnValue = '';
     settingsDialog.showModal();
   });
   settingsDialog.addEventListener('close', () => {
     if (settingsDialog.returnValue !== 'save') return;
-    settings = { shopName: settingsForm.shopName.value.trim(), chatName: settingsForm.chatName.value.trim() };
+    settings = { ...settings, shopName: settingsForm.shopName.value.trim(), chatName: settingsForm.chatName.value.trim(), reminderMinutes: Number(settingsForm.reminderMinutes.value) };
     store(SETTINGS_KEY, settings);
     render();
     const newKey = settingsForm.serverKey.value.trim();
@@ -785,12 +975,12 @@
 
   $('#csv-btn').addEventListener('click', () => {
     const cols = [
-      ['date', '날짜'], ['time', '시간'], ['status', '상태'], ['customer', '고객명'], ['phone', '연락처'], ['product', '상품'],
+      ['date', '날짜'], ['time', '시간'], ['status', '상태'], ['customer', '주문자 이름'], ['region', '지역명'], ['phone', '연락처'], ['product', '상품'],
       ['price', '금액'], ['paid', '입금'], ['method', '수령'], ['style', '꽃·색감'], ['address', '배송지'], ['recipient', '받는 분'],
       ['recipientPhone', '받는 분 연락처'], ['ribbon', '리본'], ['card', '카드'], ['memo', '메모'],
     ];
     const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const value = (o, k) => (k === 'status' ? statusLabel(o.status) : k === 'paid' ? (o.paid ? 'O' : '') : k === 'method' ? ({ pickup: '픽업', delivery: '배송' }[o.method] || '') : o[k]);
+    const value = (o, k) => (k === 'region' ? regionLabel(o) : k === 'status' ? statusLabel(o.status) : k === 'paid' ? (o.paid ? 'O' : '') : k === 'method' ? ({ pickup: '픽업', delivery: '배송' }[o.method] || '') : o[k]);
     const rows = [...orders].sort((a, b) => sortKey(a).localeCompare(sortKey(b))).map((o) => cols.map(([k]) => cell(value(o, k))).join(','));
     download(`꽃주문_${today()}.csv`, '﻿' + [cols.map(([, h]) => cell(h)).join(','), ...rows].join('\r\n'), 'text/csv;charset=utf-8');
   });
@@ -912,6 +1102,7 @@
         </div>
       </li>`).join('');
     document.title = wanted.length ? `(${wanted.length}) ${BASE_TITLE}` : BASE_TITLE;
+    renderAlerts();
   }
 
   async function dismissGroup(key) {
@@ -953,8 +1144,8 @@
   $('#refresh-btn').addEventListener('click', () => sync({ quiet: false }));
 
   // 20초마다, 그리고 화면으로 돌아올 때마다 새 메시지를 확인합니다.
-  setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 20000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
+  setInterval(() => { sync(); renderAlerts(); }, 20000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { sync(); renderAlerts(); } });
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -963,5 +1154,6 @@
   setConn(remote() ? 'ok' : 'local');
   render();
   renderInbox();
-  sync({ quiet: false });
+  sync({ quiet: false }).then(openNotificationTarget);
+  openNotificationTarget();
 })();

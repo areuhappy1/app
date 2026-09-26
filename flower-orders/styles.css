@@ -383,3 +383,28 @@ dialog h2 { margin: 0 0 12px; font-size: 18px; }
 .more-ways summary::before { content: "＋ "; }
 .more-ways[open] summary::before { content: "－ "; }
 .more-ways .row-actions { margin-top: 10px; }
+
+/* 주문 식별, 상세보기와 알림함 */
+.order { cursor: pointer; }
+.order:focus-visible { outline: 3px solid var(--accent, #c2456b); outline-offset: 3px; }
+.order-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 18px; }
+.region-label { font-size: 13px; border-radius: 6px; padding: 3px 7px; background: var(--blue-soft); color: var(--blue); }
+.detail-heading, .reminder-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.detail-heading h2, .reminder-heading h2 { margin: 0; font-size: 18px; }
+.detail-heading { position: sticky; top: -18px; padding: 12px 0; background: var(--surface); z-index: 1; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.detail-grid > div { min-width: 0; padding: 10px; border-radius: 8px; background: var(--bg); }
+.detail-grid dt { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.detail-grid dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reminder-panel { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin: 12px 0; background: var(--surface); }
+#reminder-list { max-height: 340px; overflow-y: auto; }
+.reminder-item { padding: 10px 12px; margin-top: 8px; border: 1px solid var(--line); border-left: 4px solid #c2456b; border-radius: 8px; }
+.reminder-item.overdue { border-left-color: #bd3131; background: #fff3f3; color: #562828; }
+.reminder-open { display: grid; gap: 4px; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 0 8px; font: inherit; overflow-wrap: anywhere; }
+.reminder-open small { color: var(--muted); }
+.reminder-panel > details { margin-top: 12px; }
+.reminder-panel summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+@media (max-width: 420px) {
+  .detail-grid { grid-template-columns: 1fr; }
+  .reminder-heading { align-items: flex-start; }
+}
