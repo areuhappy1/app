@@ -667,9 +667,11 @@
   });
 
   // PC에서 캡처 이미지를 바로 붙여넣거나 끌어다 놓아도 읽습니다.
+  // 붙여넣으면 바로 주문을 찾아 정리합니다 (버튼을 누를 필요 없음).
   paste.addEventListener('paste', (e) => {
     const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
-    if (files.length) { e.preventDefault(); readImages(files); }
+    if (files.length) { e.preventDefault(); readImages(files); return; }
+    setTimeout(() => { if (paste.value.trim()) runParse(); }, 0);
   });
   paste.addEventListener('dragover', (e) => e.preventDefault());
   paste.addEventListener('drop', (e) => {
