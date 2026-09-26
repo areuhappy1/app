@@ -315,14 +315,25 @@
       .trim();
   }
 
+  // 도로명 주소 한 덩어리 (도로명+번호 뒤로 동/호/층/건물명까지)
+  const RE_ROAD_FULL = /(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)\s*)?(?:[가-힣]+(?:시|구|군)\s*)*[가-힣A-Za-z0-9]+(?:로|길)\s*\d+(?:-\d+)?(?:\s+(?:\d+(?:동|호|층|호실|번지)|[가-힣A-Za-z0-9]+(?:빌딩|타워|아파트|아파트\s*\d+동|상가|오피스텔|빌라|맨션)))*/;
+  // 장례식장·병원 등 장소명 한 덩어리 (호실까지)
+  const RE_VENUE_FULL = /[가-힣A-Za-z0-9]*(?:세브란스|아산병원|성모병원|의료원|병원|장례식장|장례|웨딩홀|예식장|컨벤션|호텔|교회|성당|빈소)(?:\s*[가-힣A-Za-z0-9]+)?(?:\s*특?\s*\d+\s*호실?)?/;
+  const RE_PRODUCT_WORD = /꽃다발|꽃바구니|바구니|꽃상자|화환|부케|화분|동양[란난]|서양[란난]|센터피스|부토니[에어]|코사지|카네이션/;
+
   function findAddress(text) {
     const m = text.match(/(?:주소|배송지|배달\s*주소|보낼\s*곳|받는\s*곳)\s*(?:는|은|가|이)?\s*[:：]?\s*([^\n]+)/);
     if (m && cleanAddress(m[1])) return cleanAddress(m[1]);
-    const lines = text.split('\n');
-    const road = lines.find((l) => RE_ROAD.test(l) && RE_AREA.test(l));
-    if (road) return cleanAddress(road);
-    const venue = lines.find((l) => RE_VENUE.test(l) && l.length < 80);
-    return venue ? cleanAddress(venue) : '';
+    // 도로명 주소를 문장 안에서 바로 뽑습니다 (지역명이 구/군이 아니어도).
+    const road = text.match(RE_ROAD_FULL);
+    if (road && road[0].trim()) return road[0].trim();
+    // 장소명(장례식장·병원 등)
+    const venue = text.match(RE_VENUE_FULL);
+    if (venue) {
+      const v = venue[0].trim();
+      if (!RE_PRODUCT_WORD.test(v)) return v;
+    }
+    return '';
   }
 
   // 수령 방법
@@ -347,6 +358,13 @@
     if (m) {
       const v = unquote(m[1].replace(/\s*(?:이?라고|으로|로)?\s*(?:써|적어|넣어|해)\s*주.*$/, ''));
       if (v) parts.push('보내는 분: ' + v);
+    }
+    // 라벨 없이 "축 발전 이라고 써서"처럼 온 경우
+    if (!parts.length) {
+      const q = text.match(/["“']([^"”'\n]{1,30})["”']\s*(?:이?라고\s*)?(?:써|적어|넣어)/);
+      const b = text.match(/(?:^|\s)((?:축|근조|삼가|경축|축하)\s?[가-힣\s]{1,20}?)\s*이?라고\s*(?:써|적어|넣어)/);
+      const v = unquote((q && q[1]) || (b && b[1]) || '');
+      if (v) parts.push(v);
     }
     return parts.join(' / ');
   }

@@ -138,3 +138,19 @@ test('서버 메시지 묶기: 거의 동시에 두 번 온 같은 알림은 한
   assert.deepEqual(g.messageIds, [5, 6]);
   assert.equal(g.source.split('\n').length, 1);
 });
+
+test('자유 문장: 장례식장 주소·도로명·리본 뽑기', () => {
+  const now = new Date(2026, 8, 26, 10, 0);
+  const a = parse('김여사님댁에 근조화환 하나 보내주세요 신촌세브란스 장례식장 특2호실 내일 아침 일찍 10만원짜리로', { now });
+  const o = a.candidates[0];
+  assert.equal(o.product, '근조화환 ×1');
+  assert.equal(o.method, 'delivery');
+  assert.equal(o.address, '신촌세브란스 장례식장 특2호실');
+  assert.equal(o.price, 100000);
+
+  const b = parse('사장님 화요일 오전에 개업화환 3개 좀 부탁해요 축 발전 이라고 써서 강남 테헤란로 152 로 보내주세요', { now });
+  const o2 = b.candidates[0];
+  assert.equal(o2.product, '축하화환 ×3');
+  assert.equal(o2.address, '테헤란로 152');
+  assert.equal(o2.ribbon, '축 발전');
+});

@@ -21,13 +21,13 @@
   </header>
 
   <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="list" role="tab" aria-selected="true">오늘 할 일 <span class="count" id="tab-count"></span></button>
-    <button class="tab" data-tab="add" role="tab" aria-selected="false">＋ 주문 추가</button>
+    <button class="tab active" data-tab="add" role="tab" aria-selected="true">＋ 주문 추가</button>
+    <button class="tab" data-tab="list" role="tab" aria-selected="false">오늘 할 일 <span class="count" id="tab-count"></span></button>
   </nav>
 
   <main>
     <!-- 주문 목록 -->
-    <section class="panel active" id="panel-list">
+    <section class="panel" id="panel-list">
       <section class="inbox" id="inbox" hidden>
         <header class="inbox-head">
           <h2>새로 들어온 주문 <span class="count" id="inbox-count"></span></h2>
@@ -65,11 +65,11 @@
     </section>
 
     <!-- 주문 넣기 -->
-    <section class="panel" id="panel-add">
+    <section class="panel active" id="panel-add">
       <div class="paste-hero">
         <h2 class="paste-title">주문 붙여넣기</h2>
-        <p class="hint">카톡·문자 주문을 복사해서 아래에 붙여넣으면 자동으로 정리돼요. 여러 건은 <b>빈 줄 두 줄</b>로 나눠 주세요.</p>
-        <textarea id="paste" rows="6" autofocus placeholder="여기에 붙여넣으세요.&#10;예) 내일 오후 3시 꽃다발 5만원 픽업할게요 010-1234-5678"></textarea>
+        <p class="hint">손님이 <b>문자·카톡으로 보낸 주문</b>을 그대로 복사해서 붙여넣으세요. 말투가 제각각이어도 상품·날짜·시간·연락처를 알아서 정리해요. 여러 건은 <b>빈 줄 두 줄</b>로 나눠 주세요.</p>
+        <textarea id="paste" rows="6" autofocus placeholder="손님이 보낸 문자를 그대로 붙여넣으세요.&#10;예) 아이고 사장님 내일 3시쯤 꽃다발 하나 5만원어치 해줘요 찾으러갈게 010-1234-5678"></textarea>
         <div class="row-actions">
           <button type="button" class="btn primary grow" id="parse-btn">주문 정리하기</button>
           <button type="button" class="btn" id="clipboard-btn">📋 붙여넣기</button>
