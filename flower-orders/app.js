@@ -202,9 +202,10 @@
     const fd = new FormData(form);
     const get = (k) => (fd.get(k) || '').toString().trim();
     const price = get('price').replace(/[^\d]/g, '');
+    const names = fd.getAll('customer').map((v) => String(v).trim()).filter(Boolean);
     return {
       ...base,
-      customer: get('customer'),
+      customer: names.length ? names[names.length - 1] : '',
       phone: get('phone'),
       product: get('product'),
       price: price ? Number(price) : null,
@@ -541,7 +542,9 @@
     if (!found.length) toast('주문으로 보이는 내용을 못 찾았어요. 직접 입력해 주세요.');
   }
 
+  let nameAsked = false;
   function renderCandidates(format) {
+    nameAsked = false;
     const head = $('#candidates-head');
     head.hidden = candidates.length === 0;
     $('#candidates-summary').textContent = candidates.length
@@ -551,14 +554,23 @@
     $('#candidates').innerHTML = candidates.map((c, i) => {
       const dup = c.source && orders.some((o) => o.key === c.key);
       const when = [c.date ? dayLabel(c.date).replace(/ · .*$/, '') : '날짜 미정', c.time ? timeLabel(c.time) : ''].filter(Boolean).join(' ');
-      const summary = [esc(c.customer) || '이름 미정', when, esc(c.product) || '상품 미정', c.price ? won(c.price) : ''].filter(Boolean).join(' · ');
+      const noName = !c.customer;
+      const summary = [noName ? '' : esc(c.customer), when, esc(c.product) || '상품 미정', c.price ? won(c.price) : ''].filter(Boolean).join(' · ');
       const miss = [];
       if (!c.product) miss.push('상품');
       if (!c.date) miss.push('날짜');
       if (c.method === 'delivery' && !c.address) miss.push('배송지');
+      const focusName = noName && !nameAsked;
+      if (noName) nameAsked = true;
+      const recent = noName ? recentCustomers().slice(0, 6) : [];
       return `
         <form class="card cand order-form" data-index="${i}">
           ${candidates.length > 1 ? `<div class="cand-no">주문 ${i + 1}/${candidates.length}</div>` : ''}
+          ${noName ? `<label class="name-ask">
+            <span class="name-ask-q">이 주문 누구예요? <b>고객명</b></span>
+            <input name="customer" value="" placeholder="카톡 상단 이름 (예: 김민지)" autocomplete="off"${focusName ? ' autofocus' : ''}>
+          </label>
+          ${recent.length ? `<div class="name-recent">${recent.map((n) => `<button type="button" class="name-chip" data-name="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}` : ''}
           <div class="cand-summary">${summary}</div>
           ${dup ? '<p class="cand-missing warn2">이미 등록한 주문일 수 있어요.</p>' : ''}
           ${miss.length ? `<p class="cand-missing">⚠️ ${miss.join('·')}이(가) 비어 있어요. ‘내용 수정’에서 채워 주세요.</p>` : ''}
@@ -571,7 +583,27 @@
     }).join('');
     $$('#candidates form').forEach(bindMethodToggle);
     if (candidates.length) $('#candidates-head').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const nameInput = $('#candidates .name-ask input');
+    if (nameInput) setTimeout(() => { nameInput.focus(); }, 60);
   }
+
+  function recentCustomers() {
+    const seen = new Set();
+    const out = [];
+    for (const o of [...orders].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))) {
+      const n = (o.customer || '').trim();
+      if (n && !seen.has(n)) { seen.add(n); out.push(n); }
+    }
+    return out;
+  }
+
+  // 단골 이름 버튼: 눌러서 이름칸 채우기
+  $('#candidates').addEventListener('click', (e) => {
+    const chip = e.target.closest('.name-chip');
+    if (!chip) return;
+    const input = chip.closest('form').querySelector('input[name=customer]');
+    if (input) { input.value = chip.dataset.name; input.focus(); }
+  });
 
   async function takeCandidate(form, save) {
     const i = Number(form.dataset.index);

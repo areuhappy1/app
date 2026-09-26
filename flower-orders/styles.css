@@ -471,3 +471,20 @@ dialog h2 { margin: 0 0 12px; font-size: 18px; }
 }
 .cand-missing.warn2 { background: var(--surface-2); color: var(--muted); }
 .cand .edit-more { margin-top: 10px; }
+
+/* ---------- 고객명 먼저 묻기 ---------- */
+.name-ask { display: block; margin-bottom: 10px; }
+.name-ask-q { display: block; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+.name-ask-q b { color: var(--text); }
+.name-ask input {
+  width: 100%; padding: 12px 14px; font-size: 17px;
+  border: 2px solid var(--accent); border-radius: 10px;
+  background: var(--bg);
+}
+.name-ask input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.name-recent { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 10px; }
+.name-chip {
+  padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); font-size: 14px; cursor: pointer;
+}
+.name-chip:hover { border-color: var(--accent); color: var(--accent); }
