@@ -1096,5 +1096,14 @@
   setConn(remote() ? 'ok' : 'local');
   render();
   renderInbox();
-  sync({ quiet: false });
+
+  // 주소에 ?key=매장비밀번호 가 있으면 자동으로 서버에 연결합니다.
+  // (홈 화면에 추가한 전용 링크로 열면, 브라우저 저장소가 비워져도 매번 서버에 다시 연결돼요.)
+  const urlKey = new URLSearchParams(location.search).get('key');
+  if (urlKey && urlKey.trim() && urlKey.trim() !== serverKey) {
+    history.replaceState(null, '', location.pathname + location.hash);
+    connect(urlKey.trim());
+  } else {
+    sync({ quiet: false });
+  }
 })();
