@@ -66,6 +66,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -360,3 +362,24 @@ dialog h2 { margin: 0 0 12px; font-size: 18px; }
   border-radius: 8px; background: var(--blue-soft); color: var(--blue);
   font-size: 14px; font-weight: 600;
 }
+
+/* ---------- 주문 붙여넣기 (첫 화면) ---------- */
+.paste-hero {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-top: 12px;
+  box-shadow: var(--shadow);
+}
+.paste-title { margin: 0 0 4px; font-size: 19px; }
+.paste-hero .hint { margin: 0 0 12px; }
+.paste-hero textarea#paste { min-height: 128px; font-size: 16px; }
+.paste-hero .row-actions { margin-top: 12px; }
+#parse-btn { padding: 13px 16px; font-size: 16px; }
+.more-ways { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.more-ways summary { cursor: pointer; color: var(--muted); font-size: 14px; font-weight: 600; list-style: none; }
+.more-ways summary::-webkit-details-marker { display: none; }
+.more-ways summary::before { content: "＋ "; }
+.more-ways[open] summary::before { content: "－ "; }
+.more-ways .row-actions { margin-top: 10px; }

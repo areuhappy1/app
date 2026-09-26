@@ -21,13 +21,13 @@
   </header>
 
   <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="list" role="tab" aria-selected="true">주문 목록 <span class="count" id="tab-count"></span></button>
-    <button class="tab" data-tab="add" role="tab" aria-selected="false">＋ 주문 넣기</button>
+    <button class="tab active" data-tab="add" role="tab" aria-selected="true">＋ 주문 넣기</button>
+    <button class="tab" data-tab="list" role="tab" aria-selected="false">주문 목록 <span class="count" id="tab-count"></span></button>
   </nav>
 
   <main>
     <!-- 주문 목록 -->
-    <section class="panel active" id="panel-list">
+    <section class="panel" id="panel-list">
       <section class="inbox" id="inbox" hidden>
         <header class="inbox-head">
           <h2>새로 들어온 주문 <span class="count" id="inbox-count"></span></h2>
@@ -60,23 +60,25 @@
     </section>
 
     <!-- 주문 넣기 -->
-    <section class="panel" id="panel-add">
-      <div class="card">
-        <h2 class="card-title">카톡 대화, 문자, 캡처 사진을 넣으세요</h2>
-        <p class="hint">카톡 대화방 메뉴의 <b>대화 내보내기</b>로 받은 파일, 메시지 <b>복사</b>, 문자 내용 모두 됩니다.
-          여러 문자는 <b>빈 줄 두 줄</b>로 나눠 주세요. <b>캡처·주문서 사진</b>을 넣으면 글자를 읽어서 채워요.</p>
-        <textarea id="paste" rows="8" placeholder="[김민지] [오후 2:03] 내일 3시에 꽃다발 픽업 가능할까요?&#10;[김민지] [오후 2:06] 5만원 정도로 핑크톤이요"></textarea>
+    <section class="panel active" id="panel-add">
+      <div class="paste-hero">
+        <h2 class="paste-title">주문 붙여넣기</h2>
+        <p class="hint">카톡·문자 주문을 복사해서 아래에 붙여넣으면 자동으로 정리돼요. 여러 건은 <b>빈 줄 두 줄</b>로 나눠 주세요.</p>
+        <textarea id="paste" rows="6" autofocus placeholder="여기에 붙여넣으세요.&#10;예) 내일 오후 3시 꽃다발 5만원 픽업할게요 010-1234-5678"></textarea>
         <div class="row-actions">
-          <button type="button" class="btn" id="clipboard-btn">📋 클립보드에서 붙여넣기</button>
-          <label class="btn file-btn">🖼️ 사진·캡처 읽기<input type="file" id="image-input" accept="image/*" multiple hidden></label>
-          <label class="btn file-btn">📄 대화 파일 열기<input type="file" id="file-input" accept=".txt,.csv,text/plain" hidden></label>
-          <button type="button" class="btn ghost" id="sample-btn">예시로 해보기</button>
+          <button type="button" class="btn primary grow" id="parse-btn">주문 정리하기</button>
+          <button type="button" class="btn" id="clipboard-btn">📋 붙여넣기</button>
         </div>
-        <p class="ocr-status" id="ocr-status" role="status" hidden></p>
-        <div class="row-actions">
-          <button type="button" class="btn primary grow" id="parse-btn">주문 찾기</button>
-          <button type="button" class="btn" id="manual-btn">직접 입력</button>
-        </div>
+        <details class="more-ways">
+          <summary>다른 방법으로 넣기</summary>
+          <div class="row-actions">
+            <button type="button" class="btn" id="manual-btn">✏️ 직접 입력</button>
+            <label class="btn file-btn">🖼️ 사진·캡처 읽기<input type="file" id="image-input" accept="image/*" multiple hidden></label>
+            <label class="btn file-btn">📄 대화 파일 열기<input type="file" id="file-input" accept=".txt,.csv,text/plain" hidden></label>
+            <button type="button" class="btn ghost" id="sample-btn">예시로 해보기</button>
+          </div>
+          <p class="ocr-status" id="ocr-status" role="status" hidden></p>
+        </details>
       </div>
 
       <div id="candidates-head" class="cand-head" hidden>

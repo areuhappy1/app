@@ -227,6 +227,7 @@
     });
     $$('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${name}`));
     window.scrollTo(0, 0);
+    if (name === 'add' && !candidates.length) setTimeout(() => paste.focus(), 0);
   }
   $$('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
 
