@@ -383,3 +383,91 @@ dialog h2 { margin: 0 0 12px; font-size: 18px; }
 .more-ways summary::before { content: "＋ "; }
 .more-ways[open] summary::before { content: "－ "; }
 .more-ways .row-actions { margin-top: 10px; }
+
+/* ==================== 오늘 할 일 대시보드 ==================== */
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 10px; }
+.sum-tile {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 8px; text-align: center;
+}
+.sum-num { display: block; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.sum-cap { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.summary.has-late .sum-tile.late { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.summary.has-late .sum-tile.late .sum-num { color: var(--danger); }
+
+/* ---------- 주문 카드 (핵심 정보만) ---------- */
+.order {
+  display: block; padding: 0;
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.order.status-making { border-left-color: var(--amber); }
+.order.status-ready { border-left-color: var(--blue); }
+.order.status-done { border-left-color: var(--green); opacity: 0.55; }
+.order.u-over { border-left-color: var(--danger); }
+.order-open {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; padding: 13px 14px 10px; cursor: pointer; color: inherit;
+}
+.order-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.order-time { font-size: 15px; font-weight: 600; }
+.order-time b { color: var(--accent); }
+.order.u-over .order-time b { color: var(--danger); }
+.ubadge { flex: none; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+.ubadge.over { background: var(--danger); color: #fff; }
+.ubadge.soon { background: var(--amber-soft); color: var(--amber); }
+.ubadge.fresh { background: var(--accent-soft); color: var(--accent); }
+.order-who { font-size: 17px; font-weight: 700; margin-top: 5px; }
+.order-prod { font-size: 14px; color: var(--muted); margin-top: 3px; }
+.pay { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-left: 4px; }
+.pay.paid { background: var(--green-soft); color: var(--green); }
+.pay.unpaid { background: var(--amber-soft); color: var(--amber); }
+.order-actions {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px 12px; border-top: 1px solid var(--line);
+}
+.state-chip {
+  font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted);
+}
+.state-chip.s-new { background: var(--accent-soft); color: var(--accent); }
+.state-chip.s-making { background: var(--amber-soft); color: var(--amber); }
+.state-chip.s-ready { background: var(--blue-soft); color: var(--blue); }
+.state-chip.s-done { background: var(--green-soft); color: var(--green); }
+.status-btn.next {
+  margin-left: auto; padding: 9px 16px;
+  border: 0; border-radius: 10px;
+  background: var(--accent); color: var(--accent-text);
+  font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.order.status-making .status-btn.next { background: var(--amber); color: #fff; }
+.order.status-ready .status-btn.next { background: var(--blue); color: #fff; }
+.undo-btn {
+  flex: none; width: 38px; height: 38px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--muted); font-size: 16px; cursor: pointer;
+}
+
+/* ---------- 상세 창 ---------- */
+.detail-head { display: flex; align-items: center; gap: 10px; }
+.detail-head h2 { margin: 0; }
+.detail-sub { margin: 4px 0 0; color: var(--muted); }
+.detail-sub a { color: var(--blue); }
+.detail-quick { margin: 12px 0; }
+.detail-quick .btn.primary { padding: 11px 18px; font-size: 16px; }
+.edit-more { margin-top: 4px; }
+.edit-more > summary { cursor: pointer; color: var(--muted); font-weight: 600; padding: 8px 0; list-style: none; }
+.edit-more > summary::-webkit-details-marker { display: none; }
+.edit-more > summary::before { content: "＋ "; }
+.edit-more[open] > summary::before { content: "－ "; }
+
+/* ---------- 등록 요약 카드 ---------- */
+.cand-no { font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.cand-summary { font-size: 17px; font-weight: 700; line-height: 1.4; }
+.cand-missing {
+  margin: 8px 0 0; padding: 8px 12px; border-radius: 8px;
+  background: var(--amber-soft); color: var(--amber); font-size: 14px; font-weight: 600;
+}
+.cand-missing.warn2 { background: var(--surface-2); color: var(--muted); }
+.cand .edit-more { margin-top: 10px; }

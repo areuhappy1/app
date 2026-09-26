@@ -21,13 +21,13 @@
   </header>
 
   <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="add" role="tab" aria-selected="true">＋ 주문 넣기</button>
-    <button class="tab" data-tab="list" role="tab" aria-selected="false">주문 목록 <span class="count" id="tab-count"></span></button>
+    <button class="tab active" data-tab="list" role="tab" aria-selected="true">오늘 할 일 <span class="count" id="tab-count"></span></button>
+    <button class="tab" data-tab="add" role="tab" aria-selected="false">＋ 주문 추가</button>
   </nav>
 
   <main>
     <!-- 주문 목록 -->
-    <section class="panel" id="panel-list">
+    <section class="panel active" id="panel-list">
       <section class="inbox" id="inbox" hidden>
         <header class="inbox-head">
           <h2>새로 들어온 주문 <span class="count" id="inbox-count"></span></h2>
@@ -43,12 +43,17 @@
         </details>
       </section>
 
+      <div class="summary" id="summary">
+        <div class="sum-tile"><span class="sum-num" id="sum-today">0</span><span class="sum-cap">오늘 주문</span></div>
+        <div class="sum-tile"><span class="sum-num" id="sum-prep">0</span><span class="sum-cap">준비 필요</span></div>
+        <div class="sum-tile late"><span class="sum-num" id="sum-late">0</span><span class="sum-cap">시간 지남</span></div>
+      </div>
       <div class="filters" id="filters">
-        <button class="chip active" data-filter="upcoming">예정</button>
-        <button class="chip" data-filter="today">오늘 <b data-count="today"></b></button>
+        <button class="chip active" data-filter="today">오늘 <b data-count="today"></b></button>
         <button class="chip" data-filter="tomorrow">내일 <b data-count="tomorrow"></b></button>
         <button class="chip" data-filter="week">7일</button>
-        <button class="chip" data-filter="past">지난 주문</button>
+        <button class="chip" data-filter="upcoming">예정</button>
+        <button class="chip" data-filter="past">지난</button>
         <button class="chip" data-filter="all">전체</button>
       </div>
       <div class="list-tools">
@@ -60,7 +65,7 @@
     </section>
 
     <!-- 주문 넣기 -->
-    <section class="panel active" id="panel-add">
+    <section class="panel" id="panel-add">
       <div class="paste-hero">
         <h2 class="paste-title">주문 붙여넣기</h2>
         <p class="hint">카톡·문자 주문을 복사해서 아래에 붙여넣으면 자동으로 정리돼요. 여러 건은 <b>빈 줄 두 줄</b>로 나눠 주세요.</p>

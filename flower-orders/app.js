@@ -18,7 +18,7 @@
   let orders = load(ORDERS_KEY, []);
   let settings = load(SETTINGS_KEY, { shopName: '', chatName: '' });
   let candidates = [];
-  let view = { filter: 'upcoming', query: '', hideDone: true };
+  let view = { filter: 'today', query: '', hideDone: true };
 
   const saveOrders = () => {
     if (!store(ORDERS_KEY, orders)) toast('⚠️ 저장하지 못했어요. 백업 파일을 저장해 두세요.');
@@ -104,13 +104,17 @@
   }
 
   const STATUSES = [
-    ['new', '접수'],
-    ['making', '제작중'],
-    ['ready', '준비완료'],
-    ['done', '완료'],
+    ['new', '접수', '제작 시작'],
+    ['making', '제작중', '준비 완료'],
+    ['ready', '준비완료', '수령 완료'],
+    ['done', '완료', ''],
   ];
-  const statusLabel = (s) => (STATUSES.find(([k]) => k === s) || STATUSES[0])[1];
-  const nextStatus = (s) => STATUSES[(STATUSES.findIndex(([k]) => k === s) + 1) % STATUSES.length][0];
+  const statusInfo = (s) => STATUSES.find(([k]) => k === s) || STATUSES[0];
+  const statusLabel = (s) => statusInfo(s)[1];
+  const nextActionLabel = (s) => statusInfo(s)[2];
+  const statusIndex = (s) => Math.max(0, STATUSES.findIndex(([k]) => k === s));
+  const nextStatus = (s) => STATUSES[Math.min(statusIndex(s) + 1, STATUSES.length - 1)][0];
+  const prevStatus = (s) => STATUSES[Math.max(statusIndex(s) - 1, 0)][0];
 
   // ---------- 도우미 ----------
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -253,6 +257,48 @@
 
   const sortKey = (o) => `${o.date || '9999-99-99'} ${o.time || '99:99'}`;
 
+  // 배송지에서 '○○구/시'만 뽑아 카드에 간단히 표시합니다.
+  function region(o) {
+    if (o.method !== 'delivery') return '';
+    const m = (o.address || '').match(/([가-힣]{2,}?(?:구|군|시))/);
+    return m ? m[1] : '';
+  }
+
+  function pickupAt(o) {
+    if (!o.date || !o.time) return null;
+    const [y, mo, d] = o.date.split('-').map(Number);
+    const [hh, mm] = o.time.split(':').map(Number);
+    return new Date(y, mo - 1, d, hh, mm);
+  }
+
+  // 오늘 주문이면 '40분 남음' / '시간 지남'처럼 표시합니다.
+  function remainText(o) {
+    if (o.status === 'done' || o.date !== today()) return '';
+    const at = pickupAt(o);
+    if (!at) return '';
+    const diff = Math.round((at - new Date()) / 60000);
+    if (diff < 0) return '시간 지남';
+    if (diff < 60) return `${diff}분 남음`;
+    const h = Math.floor(diff / 60), m = diff % 60;
+    return m ? `${h}시간 ${m}분 남음` : `${h}시간 남음`;
+  }
+
+  // 카드에 붙는 알림 배지: 시간 지남 > 곧 수령 > 새 주문
+  function urgency(o) {
+    if (o.status === 'done') return null;
+    const t = today();
+    const at = pickupAt(o);
+    if ((o.date && o.date < t) || (at && at < new Date())) return { badge: '시간 지남', cls: 'over', rank: 0 };
+    if (at && o.date === t) {
+      const diff = (at - new Date()) / 60000;
+      if (diff <= 90) return { badge: '곧 수령', cls: 'soon', rank: 1 };
+    }
+    if (o.status === 'new' && o.createdAt && Date.now() - new Date(o.createdAt).getTime() < 12 * 3600 * 1000) {
+      return { badge: '새 주문', cls: 'fresh', rank: 2 };
+    }
+    return null;
+  }
+
   function tally(list) {
     const counts = new Map();
     for (const o of list) {
@@ -266,36 +312,28 @@
   }
 
   function orderCard(o) {
-    const method = o.method === 'delivery' ? '<span class="badge delivery">🚚 배송</span>' : o.method === 'pickup' ? '<span class="badge pickup">🛍️ 픽업</span>' : '';
-    const tel = (p) => `<a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a>`;
-    const lines = [];
-    const who = [esc(o.customer) || '이름 없음', o.phone ? tel(o.phone) : ''].filter(Boolean).join(' · ');
-    lines.push(`<div class="meta">👤 ${who}</div>`);
-    if (o.method === 'delivery' && (o.address || o.recipient)) {
-      const to = [o.recipient ? `${esc(o.recipient)}님` : '', o.recipientPhone ? tel(o.recipientPhone) : ''].filter(Boolean).join(' ');
-      lines.push(`<div class="meta">📍 ${esc(o.address) || '주소 미정'}${to ? ` → ${to}` : ''}</div>`);
-    }
-    if (o.style) lines.push(`<div class="meta">🌷 ${esc(o.style)}</div>`);
-    if (o.ribbon) lines.push(`<div class="meta">🎀 ${esc(o.ribbon)}</div>`);
-    if (o.card) lines.push(`<div class="meta">💌 ${esc(o.card)}</div>`);
-    if (o.memo) lines.push(`<div class="meta">📝 ${esc(o.memo)}</div>`);
-
+    const u = urgency(o);
+    const methodTxt = o.method === 'delivery' ? '배송' : o.method === 'pickup' ? '픽업' : '';
+    const rem = remainText(o);
+    const timeTop = [o.time ? timeLabel(o.time) : '시간 미정', methodTxt].filter(Boolean).join(' · ');
+    const who = [esc(o.customer) || '이름 없음', esc(region(o))].filter(Boolean).join(' · ');
+    const prod = [esc(o.product) || '상품 미정', o.price ? won(o.price) : ''].filter(Boolean).join(' · ');
+    const pay = o.price ? (o.paid ? '<span class="pay paid">입금</span>' : '<span class="pay unpaid">미입금</span>') : '';
+    const action = nextActionLabel(o.status);
     return `
-      <li class="order status-${o.status}" data-id="${o.id}">
-        <div class="when">${o.time ? `<strong>${timeLabel(o.time)}</strong>` : '<span class="muted">시간 미정</span>'}</div>
-        <div class="body">
-          <div class="head">
-            <span class="product">${esc(o.product) || '<span class="muted">상품 미정</span>'}</span>
-            ${method}
-            ${o.price ? `<span class="price">${won(o.price)}</span>` : ''}
-            ${o.paid ? '<span class="badge paid">입금</span>' : ''}
+      <li class="order status-${o.status}${u ? ` u-${u.cls}` : ''}" data-id="${o.id}">
+        <button type="button" class="order-open" data-act="open">
+          <div class="order-top">
+            <span class="order-time">${timeTop}${rem ? ` · <b>${rem}</b>` : ''}</span>
+            ${u ? `<span class="ubadge ${u.cls}">${u.badge}</span>` : ''}
           </div>
-          ${lines.join('')}
-          <div class="actions">
-            <button type="button" class="status-btn" data-act="status" title="눌러서 다음 단계로">${statusLabel(o.status)} ▸</button>
-            <button type="button" class="btn small" data-act="copy">확인 메시지 복사</button>
-            <button type="button" class="btn small ghost" data-act="edit">수정</button>
-          </div>
+          <div class="order-who">${who}</div>
+          <div class="order-prod">${prod}${pay ? ` ${pay}` : ''}</div>
+        </button>
+        <div class="order-actions">
+          <span class="state-chip s-${o.status}">${statusLabel(o.status)}</span>
+          ${action ? `<button type="button" class="status-btn next" data-act="next">${action}</button>` : '<span class="grow"></span>'}
+          ${o.status !== 'new' ? `<button type="button" class="undo-btn" data-act="undo" aria-label="되돌리기">↩</button>` : ''}
         </div>
       </li>`;
   }
@@ -308,11 +346,25 @@
     $('[data-count=tomorrow]').textContent = active.filter((o) => o.date === shiftDay(1)).length || '';
     $('#brand-name').textContent = settings.shopName ? `${settings.shopName} 주문함` : '꽃 주문함';
 
+    // 오늘 할 일 요약
+    const todays = active.filter((o) => o.date === t);
+    const prep = todays.filter((o) => o.status === 'new' || o.status === 'making');
+    const overdue = active.filter((o) => urgency(o) && urgency(o).cls === 'over');
+    $('#sum-today').textContent = todays.length;
+    $('#sum-prep').textContent = prep.length;
+    $('#sum-late').textContent = overdue.length;
+    $('#summary').classList.toggle('has-late', overdue.length > 0);
+
     const list = orders
       .filter(matchesFilter)
       .filter(matchesQuery)
       .filter((o) => !view.hideDone || o.status !== 'done')
-      .sort((a, b) => (view.filter === 'past' ? sortKey(b).localeCompare(sortKey(a)) : sortKey(a).localeCompare(sortKey(b))));
+      .sort((a, b) => {
+        if (view.filter === 'past') return sortKey(b).localeCompare(sortKey(a));
+        const ua = urgency(a), ub = urgency(b);
+        if ((ua ? ua.rank : 9) !== (ub ? ub.rank : 9)) return (ua ? ua.rank : 9) - (ub ? ub.rank : 9);
+        return sortKey(a).localeCompare(sortKey(b));
+      });
 
     const groups = new Map();
     for (const o of list) {
@@ -337,21 +389,27 @@
         </section>`;
     }).join('');
 
+    $('#summary').hidden = orders.length === 0;
     const empty = $('#empty');
     empty.hidden = list.length > 0;
     if (!list.length) {
-      empty.innerHTML = orders.length
-        ? '조건에 맞는 주문이 없어요.'
-        : '아직 주문이 없어요.<br><b>＋ 주문 넣기</b>에서 카톡 대화나 문자를 붙여넣어 보세요.';
+      const soon = active.filter((o) => o.date && o.date > t).length;
+      empty.innerHTML = !orders.length
+        ? '아직 주문이 없어요.<br><b>＋ 주문 추가</b>에서 카톡·문자를 붙여넣어 보세요.'
+        : view.filter === 'today'
+          ? `오늘 준비할 주문이 없어요. 🌿${soon ? `<br>다가오는 주문 ${soon}건은 <b>예정</b>에서 볼 수 있어요.` : ''}`
+          : '조건에 맞는 주문이 없어요.';
     }
   }
 
+  function setFilter(f) {
+    view.filter = f;
+    $$('.chip').forEach((c) => c.classList.toggle('active', c.dataset.filter === f));
+    render();
+  }
   $('#filters').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
-    if (!chip) return;
-    view.filter = chip.dataset.filter;
-    $$('.chip').forEach((c) => c.classList.toggle('active', c === chip));
-    render();
+    if (chip) setFilter(chip.dataset.filter);
   });
   $('#search').addEventListener('input', (e) => { view.query = e.target.value.trim(); render(); });
   $('#hide-done').addEventListener('change', (e) => { view.hideDone = e.target.checked; render(); });
@@ -362,13 +420,12 @@
     const id = btn.closest('.order').dataset.id;
     const o = orders.find((x) => x.id === id);
     if (!o) return;
-    if (btn.dataset.act === 'status') {
-      o.status = nextStatus(o.status);
+    const act = btn.dataset.act;
+    if (act === 'next' || act === 'undo') {
+      o.status = act === 'next' ? nextStatus(o.status) : prevStatus(o.status);
       render();
       updateOrder(o).then(() => toast(`${o.customer || '주문'} → ${statusLabel(o.status)}`), fail);
-    } else if (btn.dataset.act === 'copy') {
-      copyText(confirmMessage(o)).then((ok) => toast(ok ? '확인 메시지를 복사했어요. 카톡에 붙여넣으세요.' : '복사하지 못했어요.'));
-    } else if (btn.dataset.act === 'edit') {
+    } else if (act === 'open') {
       openEditor(o);
     }
   });
@@ -412,33 +469,55 @@
   const editForm = $('#edit-form');
   let editing = null;
 
-  function openEditor(o) {
-    editing = o;
+  function renderEditor() {
+    const o = editing;
+    const action = nextActionLabel(o.status);
+    const tel = (p) => p ? ` <a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a>` : '';
     editForm.innerHTML = `
-      <h2>주문 수정</h2>
-      ${formHTML(o)}
+      <div class="detail-head">
+        <h2>주문 상세</h2>
+        <span class="state-chip s-${o.status}">${statusLabel(o.status)}</span>
+      </div>
+      <p class="detail-sub">${esc(o.customer) || '이름 없음'}${tel(o.phone)}</p>
+      <div class="row-actions detail-quick">
+        ${action ? `<button type="button" class="btn primary small" data-act="next">${action}</button>` : '<span class="state-chip s-done">완료</span>'}
+        ${o.status !== 'new' ? '<button type="button" class="btn small" data-act="undo">↩ 되돌리기</button>' : ''}
+        <button type="button" class="btn small" data-act="copy">확인 메시지 복사</button>
+      </div>
+      <details class="edit-more"><summary>내용 수정</summary>${formHTML(o, true)}</details>
       <div class="row-actions end">
         <button type="button" class="btn danger ghost" data-act="delete">삭제</button>
         <span class="grow"></span>
-        <button value="cancel" class="btn">취소</button>
+        <button value="cancel" class="btn">닫기</button>
         <button value="save" class="btn primary">저장</button>
       </div>`;
     bindMethodToggle(editForm);
+  }
+
+  function openEditor(o) {
+    editing = o;
+    renderEditor();
     editDialog.returnValue = '';
-    editDialog.showModal();
+    if (!editDialog.open) editDialog.showModal();
   }
 
   editForm.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-act=delete]');
+    const btn = e.target.closest('[data-act]');
     if (!btn || !editing) return;
-    if (!btn.dataset.armed) {
-      btn.dataset.armed = '1';
-      btn.textContent = '한 번 더 누르면 삭제';
-      return;
+    const act = btn.dataset.act;
+    if (act === 'delete') {
+      if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '한 번 더 누르면 삭제'; return; }
+      const target = editing;
+      editDialog.close('deleted');
+      deleteOrder(target).then(() => { render(); toast('주문을 삭제했어요.'); }, fail);
+    } else if (act === 'next' || act === 'undo') {
+      editing.status = act === 'next' ? nextStatus(editing.status) : prevStatus(editing.status);
+      renderEditor();
+      render();
+      updateOrder(editing).then(() => toast(`${editing.customer || '주문'} → ${statusLabel(editing.status)}`), fail);
+    } else if (act === 'copy') {
+      copyText(confirmMessage(editing)).then((ok) => toast(ok ? '확인 메시지를 복사했어요. 카톡에 붙여넣으세요.' : '복사하지 못했어요.'));
     }
-    const target = editing;
-    editDialog.close('deleted');
-    deleteOrder(target).then(() => { render(); toast('주문을 삭제했어요.'); }, fail);
   });
 
   editDialog.addEventListener('close', () => {
@@ -471,13 +550,19 @@
     $('#save-all-btn').hidden = candidates.length < 2;
     $('#candidates').innerHTML = candidates.map((c, i) => {
       const dup = c.source && orders.some((o) => o.key === c.key);
+      const when = [c.date ? dayLabel(c.date).replace(/ · .*$/, '') : '날짜 미정', c.time ? timeLabel(c.time) : ''].filter(Boolean).join(' ');
+      const summary = [esc(c.customer) || '이름 미정', when, esc(c.product) || '상품 미정', c.price ? won(c.price) : ''].filter(Boolean).join(' · ');
+      const miss = [];
+      if (!c.product) miss.push('상품');
+      if (!c.date) miss.push('날짜');
+      if (c.method === 'delivery' && !c.address) miss.push('배송지');
       return `
         <form class="card cand order-form" data-index="${i}">
-          <div class="cand-title">
-            <strong>주문 ${candidates.length > 1 ? `${i + 1}/${candidates.length}` : ''}</strong>
-            ${dup ? '<span class="badge warn">이미 등록된 대화예요</span>' : ''}
-          </div>
-          ${formHTML(c)}
+          ${candidates.length > 1 ? `<div class="cand-no">주문 ${i + 1}/${candidates.length}</div>` : ''}
+          <div class="cand-summary">${summary}</div>
+          ${dup ? '<p class="cand-missing warn2">이미 등록한 주문일 수 있어요.</p>' : ''}
+          ${miss.length ? `<p class="cand-missing">⚠️ ${miss.join('·')}이(가) 비어 있어요. ‘내용 수정’에서 채워 주세요.</p>` : ''}
+          <details class="edit-more"${miss.length ? ' open' : ''}><summary>내용 수정</summary>${formHTML(c)}</details>
           <div class="row-actions end">
             <button type="button" class="btn ghost" data-act="skip">건너뛰기</button>
             <button type="submit" class="btn primary">등록</button>
@@ -497,6 +582,7 @@
       candidates = [];
       if (save) {
         paste.value = '';
+        setFilter('upcoming');
         showTab('list');
       }
     }
