@@ -63,6 +63,15 @@ export function findAmounts(text: string): AmountMatch[] {
   return out;
 }
 
+/** 폼 금액 칸용. "50000", "50,000", "5만" 모두 원 단위 정수로. */
+export function parseAmountInput(raw: string): number {
+  const t = raw.trim();
+  if (!t) return 0;
+  const withUnit = /원|[만억천]/.test(t) ? t : `${t}원`;
+  const found = findAmounts(withUnit);
+  return found.length > 0 ? found[0].value : 0;
+}
+
 /** 이름 정규화: 공백 제거 + 끝의 '님/씨' 호칭 제거 */
 function normalizeName(name: string): string {
   return name.trim().replace(/[\s]/g, "").replace(/(님|씨)$/, "");
