@@ -9,18 +9,25 @@ import {
   Copy,
   Check,
   AlertTriangle,
+  ImageUp,
+  Loader2,
 } from "lucide-react";
 import { parseMemo } from "@/lib/parser";
 import { settle } from "@/lib/settlement";
 import { buildKakaoText } from "@/lib/format";
 import { EXAMPLES } from "@/lib/examples";
+import { runOcr } from "@/lib/ocr";
 import ReceiptCard from "@/components/ReceiptCard";
 
 export default function Home() {
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrError, setOcrError] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 입력이 바뀔 때마다 파싱 + 정산 (순수 함수, 메모이즈)
   const result = useMemo(() => {
@@ -54,6 +61,41 @@ export default function Home() {
   const loadExample = (key: keyof typeof EXAMPLES) => {
     setText(EXAMPLES[key].text);
     setCopied(false);
+  };
+
+  // 카톡 캡처 이미지 → OCR → 추출된 글자를 입력칸에 채워넣기
+  const handleImagePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // 같은 파일을 연속으로 선택해도 onChange가 다시 발생하도록 초기화
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setOcrError("이미지 파일만 올릴 수 있어요.");
+      return;
+    }
+    setOcrError(null);
+    setOcrBusy(true);
+    setOcrProgress(0);
+    try {
+      const recognized = await runOcr(file, (ratio) =>
+        setOcrProgress(Math.round(ratio * 100))
+      );
+      if (recognized.trim().length === 0) {
+        setOcrError(
+          "이미지에서 글자를 찾지 못했어요. 더 또렷한 캡처로 다시 시도해 주세요."
+        );
+      } else {
+        // 기존 내용이 있으면 아래에 덧붙이기
+        setText((prev) =>
+          prev.trim().length > 0 ? `${prev.trim()}\n${recognized}` : recognized
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setOcrError("글자 인식에 실패했어요. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setOcrBusy(false);
+    }
   };
 
   const handleSavePng = async () => {
@@ -119,6 +161,52 @@ export default function Home() {
 
       {/* 입력 영역 */}
       <section className="mb-4">
+        {/* 카톡 캡처 이미지 올리기 (무료 브라우저 OCR) */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImagePick}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={ocrBusy}
+          className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-neutral-400 bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-neutral-50 active:scale-[0.99] disabled:opacity-60"
+        >
+          {ocrBusy ? (
+            <>
+              <Loader2 size={18} className="animate-spin" />
+              글자 인식 중... {ocrProgress}%
+            </>
+          ) : (
+            <>
+              <ImageUp size={18} />
+              카톡 캡처 이미지 올리기
+            </>
+          )}
+        </button>
+        {ocrBusy && (
+          <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+            <div
+              className="h-full bg-ink transition-all"
+              style={{ width: `${ocrProgress}%` }}
+            />
+          </div>
+        )}
+        {ocrError && (
+          <p className="mb-2 text-xs text-red-500">{ocrError}</p>
+        )}
+
+        <div className="mb-2 flex items-center gap-2">
+          <div className="h-px flex-1 bg-neutral-300" />
+          <span className="text-[11px] text-neutral-400">
+            또는 직접 입력 / 카톡 텍스트 붙여넣기
+          </span>
+          <div className="h-px flex-1 bg-neutral-300" />
+        </div>
+
         <div className="mb-2 flex flex-wrap gap-2">
           <button
             type="button"
@@ -207,7 +295,9 @@ export default function Home() {
       )}
 
       <footer className="mt-10 text-center text-[11px] text-neutral-400">
-        계산은 100% 브라우저 안에서 처리되며, 입력 내용은 저장되지 않습니다.
+        글자 인식(OCR)과 정산 계산은 100% 내 브라우저 안에서 처리되며,
+        <br />
+        올린 이미지와 입력 내용은 서버로 전송·저장되지 않습니다.
       </footer>
     </main>
   );
