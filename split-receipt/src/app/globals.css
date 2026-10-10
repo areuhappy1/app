@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #efe9dc;
+  --paper: #fdfcf7;
+  --ink: #2b2b2b;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 영수증 상/하단 톱니(지그재그) 테두리 */
+.receipt-edge-top,
+.receipt-edge-bottom {
+  display: block;
+  height: 12px;
+  background-size: 16px 16px;
+  background-repeat: repeat-x;
+  background-color: transparent;
+}
+.receipt-edge-top {
+  background-image: linear-gradient(135deg, var(--paper) 50%, transparent 50%),
+    linear-gradient(-135deg, var(--paper) 50%, transparent 50%);
+  background-position: top left;
+}
+.receipt-edge-bottom {
+  background-image: linear-gradient(45deg, var(--paper) 50%, transparent 50%),
+    linear-gradient(-45deg, var(--paper) 50%, transparent 50%);
+  background-position: bottom left;
+}
+
+/* 점선 구분선 */
+.dashed {
+  border: 0;
+  border-top: 2px dashed #c9c2b0;
+  margin: 12px 0;
+}
