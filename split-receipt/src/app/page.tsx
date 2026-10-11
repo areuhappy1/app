@@ -292,6 +292,7 @@ export default function Home() {
 
       <footer className="mt-10 text-center text-[11px] text-neutral-400">
         서버에 아무것도 저장하지 않아요. 정산 내용은 공유 링크 안에만 담겨요.
+        <p className="mt-2">© 2026 채연. All rights reserved.</p>
       </footer>
     </main>
   );

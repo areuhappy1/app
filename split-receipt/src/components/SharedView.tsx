@@ -140,6 +140,7 @@ export default function SharedView({ payload, onEdit, onNew }: Props) {
 
       <footer className="mt-10 text-center text-[11px] text-neutral-400">
         정산 내용은 링크 안에만 담겨 있고 서버에 저장되지 않아요.
+        <p className="mt-2">© 2026 채연. All rights reserved.</p>
       </footer>
     </main>
   );
