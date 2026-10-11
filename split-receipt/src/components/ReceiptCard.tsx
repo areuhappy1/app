@@ -1,136 +1,204 @@
 "use client";
 
 import { forwardRef } from "react";
-import type { SettlementResult } from "@/lib/types";
+import type { BankAccount, SettlementResult } from "@/lib/types";
 import { formatWon } from "@/lib/format";
+import { accountText, isUsableAccount } from "@/lib/toss";
 
 interface Props {
   result: SettlementResult;
+  title?: string;
+  accounts?: Record<string, BankAccount>;
 }
 
+const COLOR = {
+  frame: "#efe9dc",
+  paper: "#fdfcf7",
+  ink: "#2b2b2b",
+  muted: "#8a8478",
+  line: "#c9c2b0",
+  receive: "#2f7d4f",
+  send: "#c2410c",
+};
+
 /**
- * 종이 영수증 스타일 카드. html-to-image로 캡처할 수 있도록 ref를 전달받는다.
- * 캡처 안정성을 위해 색상은 CSS 변수 대신 명시적 hex를 사용한다.
+ * 단톡방에 올릴 종이 영수증 카드. ref가 가리키는 배경 프레임째로 이미지로 저장된다.
+ * html-to-image 캡처 안정성을 위해 색상은 CSS 변수 대신 명시적 hex를 사용한다.
  */
 const ReceiptCard = forwardRef<HTMLDivElement, Props>(function ReceiptCard(
-  { result },
+  { result, title, accounts = {} },
   ref
 ) {
-  const { expenses, transfers, people, totalSpent, averagePerPerson } = result;
+  const { expenses, transfers, balances, people, totalSpent, averagePerPerson } = result;
+  const today = new Date().toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
-    <div className="mx-auto w-full max-w-sm">
-      {/* 상단 톱니 */}
-      <div className="receipt-edge-top" />
-      <div
-        ref={ref}
-        className="bg-paper px-6 py-5 font-mono text-[13px] leading-relaxed text-ink shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
-        style={{ backgroundColor: "#fdfcf7", color: "#2b2b2b" }}
-      >
-        {/* 헤더 */}
-        <div className="text-center">
-          <div className="text-lg font-bold tracking-[0.3em]">RECEIPT</div>
-          <div className="mt-1 text-[11px] tracking-widest text-neutral-500">
-            모임 정산 영수증
-          </div>
-          <div className="mt-1 text-[11px] text-neutral-400">
-            {new Date().toLocaleDateString("ko-KR")}
-          </div>
-        </div>
-
-        <hr className="dashed" />
-
-        {/* 요약 */}
-        <div className="space-y-1">
-          <Row label="총 지출액" value={formatWon(totalSpent)} strong />
-          <Row label="참석 인원" value={`${people.length}명`} />
-          <Row label="1인당 평균" value={formatWon(averagePerPerson)} />
-        </div>
-
-        <hr className="dashed" />
-
-        {/* 세부 내역 */}
-        <div className="mb-1 text-[11px] font-bold tracking-widest text-neutral-500">
-          ITEMS
-        </div>
-        <div className="space-y-2">
-          {expenses.map((exp, i) => (
-            <div key={i}>
-              <Row label={exp.title} value={formatWon(exp.total)} />
-              <div className="pl-1 text-[11px] text-neutral-500">
-                결제 {exp.payers.map((p) => p.name).join(", ") || "-"} · 참여{" "}
-                {exp.participants.join(", ") || "-"}
-              </div>
-            </div>
-          ))}
-          {expenses.length === 0 && (
-            <div className="text-neutral-400">내역이 없습니다.</div>
-          )}
-        </div>
-
-        <hr className="dashed" />
-
-        {/* 최소 송금 하이라이트 */}
+    <div className="mx-auto w-full max-w-[360px]">
+      {/* 캡처 대상. 바깥 mx-auto 여백까지 복제되면 이미지가 한쪽으로 밀려 잘린다. */}
+      <div ref={ref} className="px-4 py-5" style={{ backgroundColor: COLOR.frame }}>
+        <div className="receipt-edge-top" />
         <div
-          className="rounded-md border-2 border-dashed border-neutral-400 bg-cream px-3 py-3"
-          style={{ backgroundColor: "#f7f3e9" }}
+          className="px-6 pb-6 pt-4 text-[13px] leading-relaxed shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+          style={{ backgroundColor: COLOR.paper, color: COLOR.ink }}
         >
-          <div className="mb-2 text-center text-[13px] font-bold">
-            💸 이렇게만 송금하면 끝나요!
+          <div
+            className="flex items-center justify-between font-mono text-[10px] tracking-widest"
+            style={{ color: COLOR.muted }}
+          >
+            <span>RECEIPT</span>
+            <span>{today}</span>
           </div>
-          {transfers.length === 0 ? (
-            <div className="text-center text-[12px] text-neutral-500">
-              정산할 금액이 없어요. 이미 딱 맞습니다 🎉
+
+          <div className="mt-3 text-center">
+            <div className="break-keep text-[22px] font-extrabold leading-tight">
+              {title || "모임 정산"}
             </div>
-          ) : (
-            <div className="space-y-1">
-              {transfers.map((t, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between text-[13px]"
-                >
-                  <span className="font-semibold">
-                    {t.from} <span className="text-neutral-400">➡️</span> {t.to}
-                  </span>
-                  <span className="font-bold">{formatWon(t.amount)}</span>
+            <div className="mt-1 text-[11px]" style={{ color: COLOR.muted }}>
+              {people.length}명 · 지출 {expenses.length}건
+            </div>
+          </div>
+
+          <Divider />
+
+          <div className="text-center">
+            <div className="text-[11px] font-semibold" style={{ color: COLOR.muted }}>
+              총 지출
+            </div>
+            <div className="whitespace-nowrap font-mono text-[28px] font-extrabold tabular-nums leading-tight">
+              {formatWon(totalSpent)}
+            </div>
+            <div className="mt-0.5 text-[11px]" style={{ color: COLOR.muted }}>
+              1인 평균 {formatWon(averagePerPerson)}
+            </div>
+          </div>
+
+          <Divider />
+
+          <SectionLabel>내역</SectionLabel>
+          <div className="space-y-2">
+            {expenses.map((exp, i) => (
+              <div key={i}>
+                <LeaderRow label={exp.title} value={formatWon(exp.total)} />
+                <div className="text-[11px]" style={{ color: COLOR.muted }}>
+                  {exp.payers.map((p) => p.name).join(", ")} 결제 ·{" "}
+                  {exp.participants.length === people.length
+                    ? "전원"
+                    : exp.participants.join(", ")}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
 
-        <hr className="dashed" />
+          <Divider />
 
-        <div className="text-center text-[10px] tracking-widest text-neutral-400">
-          *** THANK YOU ***
-          <br />
-          made with split-receipt
+          <SectionLabel>개인별</SectionLabel>
+          <div className="space-y-1">
+            {balances.map((b) => (
+              <div key={b.name} className="flex items-baseline justify-between gap-2">
+                <span className="font-semibold">{b.name}</span>
+                <span className="flex items-baseline gap-2 whitespace-nowrap font-mono tabular-nums">
+                  <span className="text-[11px]" style={{ color: COLOR.muted }}>
+                    부담 {formatWon(b.owed)}
+                  </span>
+                  <span
+                    className="min-w-[84px] text-right text-[12px] font-bold"
+                    style={{
+                      color: b.net > 0 ? COLOR.receive : b.net < 0 ? COLOR.send : COLOR.muted,
+                    }}
+                  >
+                    {b.net > 0
+                      ? `+${formatWon(b.net)}`
+                      : b.net < 0
+                        ? `-${formatWon(-b.net)}`
+                        : "완료"}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div
+            className="mt-5 rounded-xl px-4 py-4"
+            style={{ backgroundColor: COLOR.ink, color: COLOR.paper }}
+          >
+            <div className="mb-3 text-center text-[13px] font-bold">💸 이렇게만 보내면 끝!</div>
+            {transfers.length === 0 ? (
+              <div className="text-center text-[12px] opacity-80">
+                보낼 돈이 없어요. 이미 딱 맞아요 🎉
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {transfers.map((t, i) => {
+                  const acc = accounts[t.to];
+                  return (
+                    <div key={i}>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-semibold">
+                          {t.from} <span className="opacity-60">→</span> {t.to}
+                        </span>
+                        <span className="whitespace-nowrap font-mono text-[15px] font-extrabold tabular-nums">
+                          {formatWon(t.amount)}
+                        </span>
+                      </div>
+                      {isUsableAccount(acc) && (
+                        <div className="whitespace-nowrap text-right font-mono text-[11px] opacity-70">
+                          {accountText(acc)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div
+            className="mx-auto mt-6 h-9 w-48"
+            style={{
+              backgroundImage: `repeating-linear-gradient(90deg, ${COLOR.ink} 0 2px, transparent 2px 4px, ${COLOR.ink} 4px 5px, transparent 5px 8px, ${COLOR.ink} 8px 11px, transparent 11px 13px)`,
+            }}
+          />
+          <div
+            className="mt-2 text-center font-mono text-[10px] tracking-[0.3em]"
+            style={{ color: COLOR.muted }}
+          >
+            THANK YOU · SPLIT-RECEIPT
+          </div>
         </div>
+        <div className="receipt-edge-bottom" />
       </div>
-      {/* 하단 톱니 */}
-      <div className="receipt-edge-bottom" />
     </div>
   );
 });
 
-function Row({
-  label,
-  value,
-  strong,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-}) {
+function Divider() {
+  return <hr className="dashed" style={{ borderTopColor: COLOR.line, margin: "16px 0" }} />;
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className={strong ? "font-bold" : ""}>{label}</span>
+    <div
+      className="mb-2 text-[11px] font-bold tracking-widest"
+      style={{ color: COLOR.muted }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function LeaderRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="max-w-[70%] font-semibold">{label}</span>
       <span
-        className={`flex-shrink-0 ${strong ? "text-base font-bold" : ""}`}
-        style={{ fontVariantNumeric: "tabular-nums" }}
-      >
-        {value}
-      </span>
+        className="min-w-0 flex-1 translate-y-[-3px] border-b border-dotted"
+        style={{ borderColor: COLOR.line }}
+      />
+      <span className="shrink-0 whitespace-nowrap font-mono tabular-nums">{value}</span>
     </div>
   );
 }

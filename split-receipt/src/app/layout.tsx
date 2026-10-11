@@ -1,10 +1,18 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const description = "앱 설치 없이 영수증을 확인하고 토스로 바로 보내세요. 모임 1/N 정산 영수증.";
+
 export const metadata: Metadata = {
   title: "split-receipt · 모임 1/N 정산",
-  description:
-    "참여자를 한 번만 등록하고 지출을 찍으면 최소 송금 경로와 종이 영수증 카드로 정리해주는 1/N 정산 웹앱.",
+  description,
+  openGraph: {
+    title: "🧾 정산 영수증이 도착했어요",
+    description,
+    type: "website",
+    locale: "ko_KR",
+    siteName: "split-receipt",
+  },
 };
 
 export const viewport: Viewport = {

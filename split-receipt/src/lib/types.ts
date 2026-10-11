@@ -32,6 +32,13 @@ export interface Balance {
   net: number;
 }
 
+/** 송금 받을 계좌. bank는 토스 딥링크에 쓰는 은행 코드(예: "국민", "토스") */
+export interface BankAccount {
+  bank: string;
+  /** 숫자만 */
+  number: string;
+}
+
 /** 최소 송금 경로 한 건 */
 export interface Transfer {
   from: string;
