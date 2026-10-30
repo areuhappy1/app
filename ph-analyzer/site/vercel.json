@@ -1,0 +1,11 @@
+{
+  "headers": [
+    {
+      "source": "/(.*)\\.zip",
+      "headers": [
+        { "key": "Content-Type", "value": "application/zip" },
+        { "key": "Content-Disposition", "value": "attachment; filename=\"ph_analyzer_v6_windows.zip\"" }
+      ]
+    }
+  ]
+}
