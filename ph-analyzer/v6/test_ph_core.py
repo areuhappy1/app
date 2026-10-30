@@ -155,6 +155,40 @@ def test_cross_validation():
     check("교차검증 동작", all(r and r["n"] == len(rows) for r in res.values()))
 
 
+def chart_scene(strip_rgb, light=(1.0, 1.0, 1.0), exposure=1.0):
+    """상자 색표 7칸(pH 4~10) + 시험지가 함께 찍힌 가상 사진."""
+    chart = [(230, 90, 50), (240, 150, 40), (225, 200, 40), (150, 190, 60),
+             (60, 160, 90), (40, 130, 150), (50, 80, 170)]
+    h, w = 300, 800
+    lin = np.zeros((h, w, 3))
+    lin[:] = core.srgb_to_linear(np.array([0.5, 0.48, 0.45]))
+    patches = []
+    for i, rgb in enumerate(chart):
+        x = 30 + i * 108
+        lin[30:110, x:x + 80] = core.srgb_to_linear(np.array(rgb) / 255.0)
+        patches.append((4 + i, [x / w, 30 / h, 80 / w, 80 / h]))
+    lin[180:280, 360:440] = core.srgb_to_linear(np.array(strip_rgb) / 255.0)
+    lin = lin * np.array(light) * exposure
+    srgb = (core.linear_to_srgb(lin) * 255).round().astype(np.uint8)
+    chart_cfg = {
+        "patches": [{"ph": ph, "roi_norm": n} for ph, n in patches],
+        "strip_norm": [360 / w, 180 / h, 80 / w, 100 / h],
+    }
+    return srgb[:, :, ::-1].copy(), chart, chart_cfg
+
+
+def test_chart_mode():
+    _, chart, _ = chart_scene((0, 0, 0))
+    strip = tuple(int(0.6 * a + 0.4 * b) for a, b in zip(chart[3], chart[4]))  # 약 pH 7.4
+    preds = []
+    for light, exposure in [((1, 1, 1), 1.0), ((1.4, 1.0, 0.55), 0.7), ((0.9, 1.0, 1.2), 0.45)]:
+        img, _, cfg = chart_scene(strip, light, exposure)
+        pred, _, _, warnings = core.measure_with_chart(img, cfg)
+        preds.append(pred["ph"])
+    print("     조명 3종 결과: " + ", ".join(f"{v:.2f}" for v in preds))
+    check("색표 모드: 조명이 바뀌어도 pH 약 7.4", all(abs(v - 7.4) < 0.15 for v in preds))
+
+
 if __name__ == "__main__":
     test_delta_e2000()
     test_lab_matches_reference()
@@ -164,4 +198,5 @@ if __name__ == "__main__":
     test_unicode_path()
     test_curve_prediction()
     test_cross_validation()
+    test_chart_mode()
     print("\n모든 검사 통과")

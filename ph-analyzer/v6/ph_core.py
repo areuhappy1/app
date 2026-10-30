@@ -11,6 +11,7 @@ V5 대비 변경점
 - 색차는 CIEDE2000(ΔE00)
 - pH 곡선 투영 예측 (기준색을 pH 순서로 이은 선 위에 투영)
 - 교차검증(Leave-one-out)으로 정확도 수치화
+- 색표 모드: 같은 사진 속 시험지 상자 색표와 직접 비교 (기준색 등록 불필요)
 """
 
 import csv
@@ -27,6 +28,7 @@ RESULT_FILE = DATA_DIR / "ph_results_v6.csv"
 SITES_FILE = DATA_DIR / "site_profiles.json"
 CONFIG_FILE = DATA_DIR / "config_v6.json"
 CV_REPORT_FILE = DATA_DIR / "accuracy_report_v6.csv"
+CHART_FILE = DATA_DIR / "chart_profile_v6.json"
 
 # V5 이하에서 쓰던 기준색 파일 (OpenCV 8비트 Lab)
 LEGACY_TRAIN_FILES = [
@@ -40,6 +42,7 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
 
 MODE_RAW = "raw"   # 색 보정 없음
 MODE_WB = "wb"     # 흰색/회색 기준 카드로 보정
+MODE_CHART = "chart"  # 같은 사진 속 상자 색표와 비교
 
 METHOD_CURVE = "curve"  # V6: pH 곡선 투영
 METHOD_KNN = "knn"      # V5: 가까운 기준 3개 거리가중 평균
@@ -675,3 +678,70 @@ def write_cv_report(results):
                     method, leave, f'{d["ph"]:.3f}', f'{d["pred"]:.3f}',
                     f'{d["err"]:+.3f}', d["image_path"],
                 ])
+
+
+# ---------------------------
+# 색표 모드
+# ---------------------------
+def load_chart():
+    """
+    저장된 색표 설정. 색 자체가 아니라 '사진 속 위치(비율)'와 칸별 pH만 저장하고,
+    색은 측정할 때마다 그 사진에서 새로 읽는다.
+    {"patches": [{"ph": 4.0, "roi_norm": [x, y, w, h]}, ...], "strip_norm": [...], ...}
+    """
+    chart = read_json(CHART_FILE, None)
+    if not chart or len(chart.get("patches", [])) < 2 or not chart.get("strip_norm"):
+        return None
+    return chart
+
+
+def save_chart(patches, strip_norm, image_path):
+    chart = {
+        "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "setup_image": str(image_path),
+        "patches": [
+            {"ph": float(ph), "roi_norm": [float(v) for v in norm]}
+            for ph, norm in patches
+        ],
+        "strip_norm": [float(v) for v in strip_norm],
+    }
+    if CHART_FILE.exists():
+        backup = CHART_FILE.with_name(
+            f"chart_profile_v6_backup_{time.strftime('%Y%m%d_%H%M%S')}.json"
+        )
+        CHART_FILE.replace(backup)
+    write_json(CHART_FILE, chart)
+    return chart
+
+
+def chart_summary(chart):
+    if not chart:
+        return "색표 미설정"
+    phs = sorted(p["ph"] for p in chart["patches"])
+    return f"색표 {len(phs)}칸 (pH {phs[0]:g}~{phs[-1]:g})"
+
+
+def read_chart_rows(img, chart, image_path=""):
+    """사진 속 색표 칸들의 색을 읽어 기준색 rows 형태로 반환. 반사광 많은 칸은 경고."""
+    rows = []
+    warnings = []
+    for patch in chart["patches"]:
+        color = extract_color(img, normalized_to_roi(img, patch["roi_norm"]))
+        if color["glare_ratio"] > 0.3:
+            warnings.append(f"색표 pH {patch['ph']:g} 칸 반사광")
+        rows.append({
+            "ph": patch["ph"],
+            "image_path": f"{Path(str(image_path)).name} 색표 pH {patch['ph']:g}",
+            "mode": MODE_CHART,
+            "L": color["L"], "a": color["a"], "b": color["b"],
+            "hex": color["hex"],
+        })
+    return rows, warnings
+
+
+def measure_with_chart(img, chart, method=METHOD_CURVE, image_path=""):
+    """같은 사진 속 색표와 시험지를 비교해 pH 계산."""
+    rows, warnings = read_chart_rows(img, chart, image_path)
+    color = extract_color(img, normalized_to_roi(img, chart["strip_norm"]))
+    pred = predict_ph(color["L"], color["a"], color["b"], rows, method)
+    return pred, color, rows, warnings

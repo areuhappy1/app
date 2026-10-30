@@ -12,7 +12,8 @@ import numpy as np
 import ph_core as core
 from ph_core import (
     DATA_DIR, TRAIN_FILE, RESULT_FILE, SITES_FILE, CONFIG_FILE, CV_REPORT_FILE,
-    IMAGE_EXTS, MODE_RAW, MODE_WB, METHOD_CURVE, METHOD_KNN,
+    CHART_FILE,
+    IMAGE_EXTS, MODE_RAW, MODE_WB, MODE_CHART, METHOD_CURVE, METHOD_KNN,
     ensure_dir, read_json, write_json, load_sites, save_sites,
     imread_any, roi_to_normalized, normalized_to_roi,
     extract_color, load_training_rows, append_training, append_result,
@@ -63,6 +64,60 @@ def select_roi(img, title):
     return core.clamp_roi([x, y, rw, rh], w, h)
 
 
+def select_rois(img, title):
+    """여러 영역 연속 선택: 드래그 → Space/Enter로 하나씩 확정, 다 고르면 Esc."""
+    h, w = img.shape[:2]
+    scale = min(1200 / w, 760 / h, 1.0)
+
+    if scale < 1.0:
+        disp = cv2.resize(
+            img,
+            (int(w * scale), int(h * scale)),
+            interpolation=cv2.INTER_AREA
+        )
+    else:
+        disp = img.copy()
+
+    cv2.namedWindow(title, cv2.WINDOW_NORMAL)
+    boxes = cv2.selectROIs(
+        title, disp,
+        showCrosshair=True,
+        fromCenter=False
+    )
+    cv2.destroyWindow(title)
+
+    rois = []
+    for r in boxes:
+        x, y, rw, rh = [int(round(v / scale)) for v in r]
+        if rw >= 4 and rh >= 4:
+            rois.append(core.clamp_roi([x, y, rw, rh], w, h))
+    return rois
+
+
+def draw_chart_preview(img, chart):
+    """색표 칸/시험지 위치를 사진 위에 그려서 확인용 이미지로 반환."""
+    out = img.copy()
+    thick = max(2, img.shape[1] // 400)
+
+    for patch in chart["patches"]:
+        x, y, w, h = normalized_to_roi(img, patch["roi_norm"])
+        cv2.rectangle(out, (x, y), (x + w, y + h), (255, 120, 0), thick)
+        cv2.putText(
+            out, f"{patch['ph']:g}", (x, max(12, y - 6)),
+            cv2.FONT_HERSHEY_SIMPLEX, max(0.5, thick / 3),
+            (255, 120, 0), thick
+        )
+
+    x, y, w, h = normalized_to_roi(img, chart["strip_norm"])
+    cv2.rectangle(out, (x, y), (x + w, y + h), (0, 0, 255), thick)
+    cv2.putText(
+        out, "STRIP", (x, max(12, y - 6)),
+        cv2.FONT_HERSHEY_SIMPLEX, max(0.5, thick / 3),
+        (0, 0, 255), thick
+    )
+    return out
+
+
 class PHApp:
     def __init__(self, root):
         ensure_dir()
@@ -70,8 +125,10 @@ class PHApp:
 
         self.root = root
         self.root.title(APP_NAME)
-        self.root.geometry("1360x920")
-        self.root.minsize(1100, 760)
+        # 화면보다 크게 열리지 않도록 (넘치는 부분은 세로 스크롤)
+        height = min(1000, self.root.winfo_screenheight() - 80)
+        self.root.geometry(f"1360x{height}")
+        self.root.minsize(1100, 600)
 
         cfg = read_json(CONFIG_FILE, None)
         if cfg is None:
@@ -110,6 +167,12 @@ class PHApp:
         self.failed = set()
 
         self.wb_var = tk.BooleanVar(value=bool(cfg.get("wb_enabled", False)))
+        self.chart = core.load_chart()
+        self.basis_var = tk.StringVar(
+            value="chart" if cfg.get("basis") == "chart" else "ref"
+        )
+        self.chart_var = tk.StringVar(value=core.chart_summary(self.chart))
+        self.measure_help_var = tk.StringVar()
         self.method_var = tk.StringVar(value=METHOD_LABELS[self.method])
         self.mode_info_var = tk.StringVar()
 
@@ -145,8 +208,14 @@ class PHApp:
     def mode(self):
         return MODE_WB if self.wb_var.get() else MODE_RAW
 
+    @property
+    def chart_mode(self):
+        return self.basis_var.get() == "chart"
+
     def refresh_auto_roi_label(self):
-        if not self.auto_roi_norm:
+        if self.basis_var.get() == "chart":
+            text = "색표 모드 - 색표 설정의 위치 사용"
+        elif not self.auto_roi_norm:
             text = "아직 설정 안 됨"
         elif self.auto_ref_norm:
             text = "설정됨 (시험지 + 기준 카드)"
@@ -164,12 +233,56 @@ class PHApp:
                 "auto_ref_norm": self.auto_ref_norm,
                 "wb_enabled": bool(self.wb_var.get()),
                 "method": self.method,
+                "basis": self.basis_var.get(),
             }
         )
 
+    def build_scroll_area(self):
+        """창이 화면보다 작아도 모든 영역을 볼 수 있도록 세로 스크롤 영역을 만든다."""
+        canvas = tk.Canvas(self.root, highlightthickness=0)
+        vsb = ttk.Scrollbar(
+            self.root,
+            orient="vertical",
+            command=canvas.yview
+        )
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        outer = ttk.Frame(canvas, padding=12)
+        win = canvas.create_window((0, 0), window=outer, anchor="nw")
+
+        def fit(event=None):
+            # 창이 충분히 크면 내용이 창 높이를 채우고(측정 기록이 늘어남), 작으면 스크롤
+            canvas.itemconfigure(
+                win,
+                width=canvas.winfo_width(),
+                height=max(canvas.winfo_height(), outer.winfo_reqheight())
+            )
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        canvas.bind("<Configure>", fit)
+        outer.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        def on_wheel(event):
+            # 측정 기록 표 위에서는 표 자체가 스크롤되도록 둠
+            if hasattr(self, "tree") and str(event.widget).startswith(str(self.tree)):
+                return
+            if event.num == 4:
+                step = -1
+            elif event.num == 5:
+                step = 1
+            else:
+                step = -1 if event.delta > 0 else 1
+            canvas.yview_scroll(step * 3, "units")
+
+        self.root.bind_all("<MouseWheel>", on_wheel)
+        self.root.bind_all("<Button-4>", on_wheel)
+        self.root.bind_all("<Button-5>", on_wheel)
+        return outer
+
     def build_ui(self):
-        outer = ttk.Frame(self.root, padding=12)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_scroll_area()
 
         ttk.Label(
             outer,
@@ -372,21 +485,56 @@ class PHApp:
         left = ttk.Frame(measure_box)
         left.pack(side="left", fill="y")
 
+        ttk.Label(
+            left,
+            text="비교 기준:",
+            font=("TkDefaultFont", 10, "bold")
+        ).pack(anchor="w")
+
+        ttk.Radiobutton(
+            left,
+            text="등록한 기준색 (1번 영역)",
+            variable=self.basis_var,
+            value="ref",
+            command=self.on_basis_change
+        ).pack(anchor="w")
+
+        chart_row = ttk.Frame(left)
+        chart_row.pack(anchor="w", fill="x")
+
+        ttk.Radiobutton(
+            chart_row,
+            text="사진 속 상자 색표",
+            variable=self.basis_var,
+            value="chart",
+            command=self.on_basis_change
+        ).pack(side="left")
+
+        ttk.Button(
+            chart_row,
+            text="색표 설정",
+            command=self.setup_chart
+        ).pack(side="left", padx=(6, 0))
+
+        ttk.Label(
+            left,
+            textvariable=self.chart_var
+        ).pack(anchor="w", padx=(20, 0))
+
         ttk.Button(
             left,
             text="사진 선택하고 바로 측정",
             command=self.measure_manual,
             width=26
-        ).pack(pady=(4, 6))
+        ).pack(pady=(8, 6))
 
         ttk.Label(
             left,
-            text=(
-                "측정사진에서 시험지 색 영역을\n"
-                "마우스로 선택하면 바로 계산됩니다."
-            ),
+            textvariable=self.measure_help_var,
             justify="left"
         ).pack(anchor="w")
+
+        self.refresh_basis_help()
 
         result = tk.Frame(
             measure_box,
@@ -933,6 +1081,192 @@ class PHApp:
             )
         )
 
+    def refresh_basis_help(self):
+        if self.chart_mode:
+            text = (
+                "저장된 색표 위치로 바로 계산합니다.\n"
+                "(색표와 시험지를 같은 자리에 두고 촬영)"
+            )
+        else:
+            text = (
+                "측정사진에서 시험지 색 영역을\n"
+                "마우스로 선택하면 바로 계산됩니다."
+            )
+        self.measure_help_var.set(text)
+
+    def on_basis_change(self):
+        if self.chart_mode and not self.chart:
+            messagebox.showinfo(
+                "색표 설정 필요",
+                "색표 모드를 쓰려면 먼저 [색표 설정]을 하세요."
+            )
+
+        self.current_measurement = None
+        self.update_current_display()
+        self.refresh_basis_help()
+        self.refresh_auto_roi_label()
+        self.save_cfg()
+        self.status_var.set(
+            "비교 기준: "
+            + ("사진 속 상자 색표" if self.chart_mode else "등록한 기준색")
+        )
+
+    def setup_chart(self):
+        path = filedialog.askopenfilename(
+            title="색표 설정용 사진 선택 (색표 + 시험지가 함께 찍힌 사진)",
+            filetypes=IMAGE_TYPES
+        )
+
+        if not path:
+            return
+
+        try:
+            img = imread_any(path)
+
+            self.status_var.set(
+                "색표 칸을 낮은 pH부터 순서대로 하나씩 드래그 → Space, 다 고르면 Esc"
+            )
+            self.root.update_idletasks()
+
+            rois = select_rois(
+                img,
+                (
+                    "CHART - drag each patch (low pH first), "
+                    "SPACE to add, ESC when done"
+                )
+            )
+
+            if len(rois) < 2:
+                messagebox.showwarning(
+                    "색표 설정",
+                    "색표 칸을 2개 이상 선택하세요."
+                )
+                return
+
+            phs = self.ask_chart_phs(len(rois))
+
+            if phs is None:
+                return
+
+            self.status_var.set("시험지 색 영역을 선택하세요.")
+            self.root.update_idletasks()
+
+            strip = select_roi(
+                img,
+                "STRIP - select test strip color area - Enter to confirm"
+            )
+
+            if strip is None:
+                return
+
+            self.chart = core.save_chart(
+                [
+                    (ph, roi_to_normalized(img, roi))
+                    for ph, roi in zip(phs, rois)
+                ],
+                roi_to_normalized(img, strip),
+                path
+            )
+
+        except Exception as e:
+            messagebox.showerror("색표 설정 오류", str(e))
+            return
+
+        self.chart_var.set(core.chart_summary(self.chart))
+        self.basis_var.set("chart")
+        self.on_basis_change()
+        self.show_chart_check(img, path)
+
+    def ask_chart_phs(self, n):
+        default = ", ".join(str(4 + i) for i in range(n))
+
+        while True:
+            text = simpledialog.askstring(
+                "색표 칸별 pH",
+                (
+                    f"선택한 색표 칸 {n}개의 pH를 선택한 순서대로 입력하세요.\n"
+                    "쉼표로 구분 (예: 4, 5, 6, 7, 8, 9, 10)"
+                ),
+                initialvalue=default,
+                parent=self.root
+            )
+
+            if text is None:
+                return None
+
+            try:
+                phs = [
+                    float(v)
+                    for v in text.replace(" ", "").split(",")
+                    if v
+                ]
+            except ValueError:
+                phs = []
+
+            if len(phs) != n:
+                messagebox.showwarning(
+                    "입력 확인",
+                    f"pH 값을 {n}개 입력하세요. (지금 {len(phs)}개)"
+                )
+            elif len(set(phs)) != n:
+                messagebox.showwarning(
+                    "입력 확인",
+                    "같은 pH 값이 두 번 들어 있습니다."
+                )
+            else:
+                return phs
+
+            default = text
+
+    def show_chart_check(self, img, path):
+        """설정한 위치를 그림으로 보여주고, 색표 자체로 보간 정확도를 검사."""
+        rows, warnings = core.read_chart_rows(img, self.chart, path)
+        res = core.cross_validate(rows, self.method, "ph")
+
+        try:
+            preview = draw_chart_preview(img, self.chart)
+            title = "CHART CHECK - press any key to close"
+            cv2.namedWindow(title, cv2.WINDOW_NORMAL)
+            cv2.imshow(title, preview)
+            cv2.waitKey(0)
+            cv2.destroyWindow(title)
+        except Exception:
+            pass
+
+        lines = [
+            core.chart_summary(self.chart),
+            f"저장 위치: {CHART_FILE}",
+            "",
+            "칸 위치와 pH만 저장됩니다. 색은 측정할 때마다 그 사진에서 새로 읽습니다.",
+        ]
+
+        if res:
+            lines += [
+                "",
+                "색표 자체 검사 (칸 하나씩 빼고 나머지로 예측):",
+                f"  평균 오차 ±{res['mae']:.2f} / 최대 ±{res['max_err']:.2f} pH",
+            ]
+
+        if warnings:
+            lines += ["", "주의: " + ", ".join(warnings) + " - 반사 없이 다시 찍는 것을 권장"]
+
+        messagebox.showinfo("색표 설정 완료", "\n".join(lines))
+
+    def measure_chart(self, image_path, img=None):
+        if not self.chart:
+            raise RuntimeError("먼저 [색표 설정]을 하세요.")
+
+        if img is None:
+            img = imread_any(image_path)
+
+        pred, color, _, warnings = core.measure_with_chart(
+            img, self.chart, self.method, image_path
+        )
+
+        return self.finish_measurement(
+            image_path, pred, color, MODE_CHART, warnings
+        )
+
     def on_mode_change(self):
         self.save_cfg()
         self.refresh_boxes()
@@ -1116,11 +1450,19 @@ class PHApp:
             rows, self.method
         )
 
+        return self.finish_measurement(
+            image_path, pred, color, self.mode
+        )
+
+    def finish_measurement(self, image_path, pred, color, mode, warnings=None):
         conf = adjust_confidence(
             pred["confidence"],
             color["uniformity"],
             color["glare_ratio"]
         )
+
+        if warnings and conf == "높음":
+            conf = "보통"
 
         site_offset = float(
             self.sites[self.current_site].get(
@@ -1137,8 +1479,9 @@ class PHApp:
             "source": "manual",
             "site": self.current_site,
             "image_path": str(image_path),
-            "mode": self.mode,
+            "mode": mode,
             "method": self.method,
+            "warnings": warnings or [],
             "raw_ph": raw,
             "site_offset": site_offset,
             "site_corrected_ph": raw + site_offset,
@@ -1220,7 +1563,13 @@ class PHApp:
         notes = []
 
         if m["out_of_range"]:
-            notes.append("기준색 범위 밖 - 더 낮은/높은 pH 기준 필요")
+            notes.append(
+                "색표 범위 밖"
+                if m["mode"] == MODE_CHART
+                else "기준색 범위 밖 - 더 낮은/높은 pH 기준 필요"
+            )
+
+        notes += m.get("warnings", [])
 
         if m["glare_ratio"] > 0.3:
             notes.append(f"반사광 {m['glare_ratio']:.0%} 제외됨")
@@ -1248,6 +1597,16 @@ class PHApp:
             return
 
         for p in paths:
+            if self.chart_mode:
+                try:
+                    self.measure_chart(p)
+                except Exception as e:
+                    messagebox.showerror(
+                        "측정 오류",
+                        f"{Path(p).name}\n{e}"
+                    )
+                continue
+
             try:
                 self.status_var.set(
                     (
@@ -1548,6 +1907,10 @@ class PHApp:
         )
 
     def analyze_auto_file(self, p):
+        if self.chart_mode:
+            row = self.measure_chart(p)
+            return self.record_auto_result(p, row)
+
         if not self.auto_roi_norm:
             raise RuntimeError(
                 (
@@ -1580,6 +1943,9 @@ class PHApp:
         row = self.calculate_measurement(
             p, roi, img, ref_roi
         )
+        return self.record_auto_result(p, row)
+
+    def record_auto_result(self, p, row):
         row["source"] = "auto"
 
         # 자동모드에서는 수동 보정 0 상태로 자동 저장
@@ -1604,13 +1970,7 @@ class PHApp:
         try:
             files = self.folder_files()
 
-            if not self.auto_roi_norm:
-                raise RuntimeError(
-                    (
-                        "먼저 자동 측정영역을 "
-                        "설정하세요."
-                    )
-                )
+            self.check_auto_ready()
 
             ok = 0
             errors = []
@@ -1642,6 +2002,30 @@ class PHApp:
                 str(e)
             )
 
+    def check_auto_ready(self):
+        if self.chart_mode:
+            if not self.chart:
+                raise RuntimeError("먼저 [색표 설정]을 하세요.")
+            return
+
+        if not self.auto_roi_norm:
+            raise RuntimeError("먼저 자동 측정영역을 설정하세요.")
+
+        if self.wb_var.get() and not self.auto_ref_norm:
+            raise RuntimeError(
+                (
+                    "색 보정 모드입니다. 자동 측정영역을 다시 설정해서 "
+                    "기준 카드 영역도 지정하세요."
+                )
+            )
+
+        rows = load_training_rows(self.mode)
+
+        if len({r["ph"] for r in rows}) < 2:
+            raise RuntimeError(
+                "먼저 현재 모드의 pH 기준색을 저장하세요."
+            )
+
     def toggle_monitor(self):
         if self.monitoring:
             self.stop_monitor()
@@ -1652,28 +2036,7 @@ class PHApp:
         try:
             self.folder_files()
 
-            if not self.auto_roi_norm:
-                raise RuntimeError(
-                    (
-                        "먼저 자동 측정영역을 "
-                        "설정하세요."
-                    )
-                )
-
-            if self.wb_var.get() and not self.auto_ref_norm:
-                raise RuntimeError(
-                    (
-                        "색 보정 모드입니다. 자동 측정영역을 다시 설정해서 "
-                        "기준 카드 영역도 지정하세요."
-                    )
-                )
-
-            rows = load_training_rows(self.mode)
-
-            if len({r["ph"] for r in rows}) < 2:
-                raise RuntimeError(
-                    "먼저 현재 모드의 pH 기준색을 저장하세요."
-                )
+            self.check_auto_ready()
 
             existing = [
                 p for p in self.folder_files()
@@ -1774,7 +2137,8 @@ class PHApp:
                 f"기준색:\n{TRAIN_FILE}\n\n"
                 f"현장 프로파일:\n{SITES_FILE}\n\n"
                 f"측정결과:\n{RESULT_FILE}\n\n"
-                f"정확도 검사 결과:\n{CV_REPORT_FILE}"
+                f"정확도 검사 결과:\n{CV_REPORT_FILE}\n\n"
+                f"색표 설정:\n{CHART_FILE}"
             )
         )
 
